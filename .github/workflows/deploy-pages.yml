@@ -25,7 +25,7 @@ jobs:
 
       - name: Assemble static site
         env:
-          DROPBOX_APP_KEY: ${{ secrets.DROPBOX_APP_KEY }}
+          DROPBOX_APP_KEY: ${{ secrets.DROPBOX_APP_KEY || vars.DROPBOX_APP_KEY }}
         run: |
           mkdir _site
           cp index.html app.js styles.css favicon.ico manifest.webmanifest _site/ 2>/dev/null || true
