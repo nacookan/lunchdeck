@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <!-- Onigiri Clip for bottom-curved Nori -->
+    <clipPath id="onigiriClip">
+      <path d="M 304.92 87.18 C 382.18 167.19, 420.61 233.76, 451.27 340.68 A 68 68 0 0 1 402.35 425.40 C 294.43 452.31, 217.57 452.31, 109.65 425.40 A 68 68 0 0 1 60.73 340.68 C 91.39 233.76, 129.82 167.19, 207.08 87.18 A 68 68 0 0 1 304.92 87.18 Z" />
+    </clipPath>
+  </defs>
+
+  <!-- Light Bright Orange Background -->
+  <rect width="512" height="512" rx="108" fill="#FED7AA"/>
+
+  <!-- Onigiri Rice Body (White with bold dark slate outline) -->
+  <path d="M 304.92 87.18 C 382.18 167.19, 420.61 233.76, 451.27 340.68 A 68 68 0 0 1 402.35 425.40 C 294.43 452.31, 217.57 452.31, 109.65 425.40 A 68 68 0 0 1 60.73 340.68 C 91.39 233.76, 129.82 167.19, 207.08 87.18 A 68 68 0 0 1 304.92 87.18 Z"
+        fill="#FFFFFF"
+        stroke="#1E293B"
+        stroke-width="20"
+        stroke-linejoin="round"
+        stroke-linecap="round"/>
+
+  <!-- Nori (Black rounded rectangle extending higher up) -->
+  <g clip-path="url(#onigiriClip)">
+    <rect x="178.0" y="269.6" width="156" height="216" rx="24" fill="#1E293B"/>
+  </g>
+</svg>

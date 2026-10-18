@@ -1,0 +1,51 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Assemble static site
+        env:
+          DROPBOX_APP_KEY: ${{ secrets.DROPBOX_APP_KEY }}
+        run: |
+          mkdir _site
+          cp index.html app.js styles.css favicon.ico manifest.webmanifest _site/ 2>/dev/null || true
+          # copy assets directory if exists
+          if [ -d assets ]; then
+            cp -R assets _site/assets
+          fi
+          # Inject DROPBOX_APP_KEY into config.local.js
+          if [ -n "$DROPBOX_APP_KEY" ]; then
+            printf 'window.LUNCHDECK_CONFIG = { dropboxAppKey: "%s" };\n' "$DROPBOX_APP_KEY" > _site/config.local.js
+          else
+            printf 'window.LUNCHDECK_CONFIG = { dropboxAppKey: "" };\n' > _site/config.local.js
+          fi
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: _site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+

@@ -1,0 +1,340 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#FF5722" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="description" content="今日のお昼ご飯を決めるツール" />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="icon" href="favicon.ico" sizes="any" />
+    <link rel="icon" href="assets/icon.svg" type="image/svg+xml" />
+    <link rel="icon" href="assets/favicon-32.png" type="image/png" sizes="32x32" />
+    <link rel="apple-touch-icon" href="assets/apple-touch-icon.png" sizes="180x180" />
+    <meta property="og:image" content="assets/icon-512.png" />
+    <meta name="twitter:image" content="assets/icon-512.png" />
+    <link rel="stylesheet" href="styles.css" />
+    <title>LunchDeck</title>
+  </head>
+  <body>
+    <div id="app">
+      <!-- Header -->
+      <header class="app-header">
+        <div class="logo">
+          <img src="assets/icon.svg" alt="" class="logo-icon" />
+          <h1 class="logo-title">LunchDeck</h1>
+        </div>
+
+        <div class="header-actions">
+          <div id="sync-status" class="sync-dot" title="保存状態"></div>
+          <button id="btn-add-restaurant" class="btn-icon" aria-label="お店を追加" title="お店を追加">
+            <i data-lucide="plus"></i>
+          </button>
+          <button id="btn-settings" class="btn-icon" aria-label="設定" title="設定">
+            <i data-lucide="settings"></i>
+          </button>
+        </div>
+      </header>
+
+      <!-- Main Content -->
+      <main class="main-container">
+        <!-- Quick Decide Action -->
+        <div class="hero-action-bar">
+          <button id="btn-pick-one" class="btn-decide" title="いまの条件から1軒選ぶ">
+            <i data-lucide="dices"></i>
+            <span>1個だけ決める！</span>
+          </button>
+        </div>
+
+        <!-- Filter & Sort Bar -->
+        <section class="filter-deck">
+          <!-- Sort & Search Row -->
+          <div class="filter-top-row">
+            <div class="sort-selector-wrap">
+              <select id="sort-select" aria-label="並び替え">
+                <option value="smart">🎯 おすすめ順 (ご無沙汰優先)</option>
+                <option value="random">🎲 完全ランダム</option>
+                <option value="recent">🕒 最近行った順</option>
+                <option value="oldest">⏳ ご無沙汰順</option>
+                <option value="most">⭐️ よく行く順</option>
+                <option value="least">🌱 未訪問・少順</option>
+                <option value="name">🔤 名前順</option>
+              </select>
+              <button id="btn-reshuffle" class="btn-icon-sub" title="シャッフル" style="display:none;">
+                <i data-lucide="shuffle"></i>
+              </button>
+            </div>
+
+            <div class="search-wrap">
+              <i data-lucide="search" class="search-icon"></i>
+              <input type="text" id="search-input" placeholder="店名検索..." aria-label="お店を検索" />
+              <button id="btn-clear-search" class="btn-clear" style="display:none;" aria-label="クリア">
+                <i data-lucide="x"></i>
+              </button>
+            </div>
+
+            <button id="btn-clear-tags" class="btn-text-reset" style="display:none;">解除</button>
+          </div>
+
+          <!-- Grouped Tag Filters -->
+          <div class="tag-groups-container">
+            <!-- Quick State Group -->
+            <div class="tag-group-row">
+              <span class="tag-group-title">状態</span>
+              <div class="tag-group-chips">
+                <button type="button" class="chip chip-quick" data-filter="unvisited">🌱 未訪問</button>
+                <button type="button" class="chip chip-quick" data-filter="neglected">⏳ ご無沙汰</button>
+                <button type="button" class="chip chip-quick" data-filter="recent">🕒 最近</button>
+                <button type="button" class="chip chip-quick" data-filter="frequent">⭐️ 定番</button>
+              </div>
+            </div>
+
+            <!-- Genre Group -->
+            <div class="tag-group-row" id="group-genre-row">
+              <span class="tag-group-title">ジャンル</span>
+              <div class="tag-group-chips" id="group-genre-chips"></div>
+            </div>
+
+            <!-- Time Group -->
+            <div class="tag-group-row" id="group-time-row">
+              <span class="tag-group-title">時間</span>
+              <div class="tag-group-chips" id="group-time-chips"></div>
+            </div>
+
+            <!-- Area Group -->
+            <div class="tag-group-row" id="group-area-row">
+              <span class="tag-group-title">方面</span>
+              <div class="tag-group-chips" id="group-area-chips"></div>
+            </div>
+
+            <!-- Other Group (Custom Tags not in defined groups) -->
+            <div class="tag-group-row" id="group-other-row" style="display:none;">
+              <span class="tag-group-title">その他</span>
+              <div class="tag-group-chips" id="group-other-chips"></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Restaurant List -->
+        <section class="restaurant-list-section">
+          <div id="restaurant-grid" class="restaurant-list">
+            <!-- Cards rendered here -->
+          </div>
+
+          <!-- Empty State -->
+          <div id="empty-state" class="empty-state" style="display:none;">
+            <p id="empty-title">お店がありません</p>
+            <p id="empty-desc" class="empty-desc" style="display:none;"></p>
+            <div class="empty-actions">
+              <button id="btn-empty-clear" class="btn btn-sm btn-secondary">絞り込みを解除</button>
+              <button id="btn-empty-add" class="btn btn-sm btn-primary">お店を追加</button>
+              <button id="btn-empty-connect" class="btn btn-sm btn-primary" style="display:none;">
+                <i data-lucide="log-in"></i> Dropbox と連携する
+              </button>
+            </div>
+          </div>
+        </section>
+      </main>
+
+      <!-- Modal: Add / Edit Restaurant -->
+      <div id="modal-restaurant" class="modal-backdrop" style="display:none;" role="dialog" aria-modal="true">
+        <div class="modal-card">
+          <header class="modal-header">
+            <h3 id="modal-restaurant-title">お店を追加</h3>
+            <button class="btn-icon-sub" data-close-modal aria-label="閉じる">
+              <i data-lucide="x"></i>
+            </button>
+          </header>
+          <form id="form-restaurant" class="modal-body">
+            <input type="hidden" id="restaurant-id" />
+
+            <!-- Store Name -->
+            <div class="form-group">
+              <label for="restaurant-name">店名</label>
+              <input
+                type="text"
+                id="restaurant-name"
+                required
+                placeholder="店名を入力"
+                autocomplete="off"
+              />
+            </div>
+
+            <!-- Genre Group Form -->
+            <div class="form-group">
+              <label>ジャンル</label>
+              <div id="form-genre-chips" class="form-chips"></div>
+              <div class="input-tag-row">
+                <input
+                  type="text"
+                  id="input-add-genre"
+                  class="input-tag-inline"
+                  placeholder="+ ジャンルを追加してEnter..."
+                  autocomplete="off"
+                />
+              </div>
+            </div>
+
+            <!-- Time Group Form -->
+            <div class="form-group">
+              <label>移動・時間</label>
+              <div id="form-time-chips" class="form-chips"></div>
+              <div class="input-tag-row">
+                <input
+                  type="text"
+                  id="input-add-time"
+                  class="input-tag-inline"
+                  placeholder="+ 時間を追加してEnter..."
+                  autocomplete="off"
+                />
+              </div>
+            </div>
+
+            <!-- Area Group Form -->
+            <div class="form-group">
+              <label>方面</label>
+              <div id="form-area-chips" class="form-chips"></div>
+              <div class="input-tag-row">
+                <input
+                  type="text"
+                  id="input-add-area"
+                  class="input-tag-inline"
+                  placeholder="+ 方面を追加してEnter..."
+                  autocomplete="off"
+                />
+              </div>
+            </div>
+
+            <!-- Visit History Section (shown when editing) -->
+            <div id="history-management-section" class="form-group history-section" style="display:none;">
+              <div class="history-header">
+                <label>訪問履歴 (<span id="history-count">0</span>回)</label>
+                <button type="button" id="btn-add-manual-visit" class="btn-text-sm">
+                  <i data-lucide="calendar-plus"></i> 日付指定追加
+                </button>
+              </div>
+              <div id="history-list" class="history-list"></div>
+            </div>
+
+            <div class="modal-footer">
+              <button
+                type="button"
+                id="btn-delete-restaurant"
+                class="btn btn-danger-outline"
+                style="display:none; margin-right: auto;"
+              >
+                削除
+              </button>
+              <button type="button" class="btn btn-secondary" data-close-modal>キャンセル</button>
+              <button type="submit" class="btn btn-primary" id="btn-save-restaurant">保存</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <!-- Modal: Pick One (Roulette / Decider) -->
+      <div id="modal-roulette" class="modal-backdrop" style="display:none;" role="dialog" aria-modal="true">
+        <div class="modal-card modal-roulette-card">
+          <header class="modal-header">
+            <h3>今日のお昼はここ！</h3>
+            <button class="btn-icon-sub" data-close-modal aria-label="閉じる">
+              <i data-lucide="x"></i>
+            </button>
+          </header>
+          <div class="modal-body roulette-body">
+            <div id="roulette-display" class="roulette-box">
+              <div id="roulette-store-name" class="roulette-name">シャッフル中...</div>
+              <div id="roulette-meta" class="roulette-meta"></div>
+            </div>
+
+            <div class="roulette-actions">
+              <button id="btn-roulette-accept" class="btn-decide btn-full" style="display:none;">
+                <i data-lucide="utensils"></i>
+                <span>ここにする！（行った）</span>
+              </button>
+              <button id="btn-roulette-retry" class="btn btn-secondary btn-full" style="display:none;">
+                <i data-lucide="rotate-cw"></i>
+                <span>もう1回選ぶ</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Modal: Settings & Dropbox Sync -->
+      <div id="modal-settings" class="modal-backdrop" style="display:none;" role="dialog" aria-modal="true">
+        <div class="modal-card">
+          <header class="modal-header">
+            <h3>設定 &amp; データ</h3>
+            <button class="btn-icon-sub" data-close-modal aria-label="閉じる">
+              <i data-lucide="x"></i>
+            </button>
+          </header>
+          <div class="modal-body settings-body">
+            <!-- Dropbox Connection Status -->
+            <div class="settings-section">
+              <h4>
+                <i data-lucide="cloud"></i>
+                <span>Dropbox 同期</span>
+              </h4>
+              <p class="settings-desc">
+                Dropboxのアプリフォルダ（<code>/lunchdeck.json</code>）と同期します。
+              </p>
+
+              <div id="dropbox-status-box" class="status-box"></div>
+
+              <div id="dropbox-actions" class="settings-btn-row">
+                <button id="btn-dropbox-connect" class="btn btn-primary" style="display:none;">
+                  <i data-lucide="log-in"></i> Dropboxに接続
+                </button>
+                <button id="btn-dropbox-logout" class="btn btn-outline" style="display:none;">
+                  <i data-lucide="log-out"></i> ログアウト
+                </button>
+                <button id="btn-dropbox-sync-now" class="btn btn-secondary" style="display:none;">
+                  <i data-lucide="refresh-cw"></i> 今すぐ同期
+                </button>
+              </div>
+            </div>
+
+            <!-- Data Backup / Restore -->
+            <div class="settings-section">
+              <h4>
+                <i data-lucide="hard-drive"></i>
+                <span>バックアップ &amp; 復元</span>
+              </h4>
+              <div class="settings-btn-row">
+                <button id="btn-export-json" class="btn btn-secondary">
+                  <i data-lucide="download"></i> JSON保存
+                </button>
+                <label class="btn btn-outline file-label">
+                  <i data-lucide="upload"></i> JSON読込
+                  <input type="file" id="file-import-json" accept=".json,application/json" style="display:none;" />
+                </label>
+              </div>
+            </div>
+
+
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-close-modal>閉じる</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Toast Container -->
+      <div id="toast-container" class="toast-container" role="status" aria-live="polite"></div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="config.local.js" onerror="window.LUNCHDECK_CONFIG = window.LUNCHDECK_CONFIG || {};"></script>
+    <script
+      src="https://unpkg.com/lucide@1.28.0/dist/umd/lucide.min.js"
+      integrity="sha384-VrnzGPiSyQxm3mI2VhlssyR85zugSHtxMkgO42qV3wUAbNk1oRdZkCWjXKOhuVu6"
+      crossorigin="anonymous"
+    ></script>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.4/dist/confetti.browser.min.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
