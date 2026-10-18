@@ -54,6 +54,9 @@
     saveDebounceTimer: null,
     lastUndoableAction: null,
     formTags: new Set(),
+    activeManagerTab: "genre",
+    renamingTag: null,
+    collapsedGroups: new Set(JSON.parse(localStorage.getItem("lunchdeck.collapsed_groups") || "[]")),
   };
 
   /* ==========================================================================
@@ -61,6 +64,7 @@
      ========================================================================== */
   const el = {
     syncStatus: document.getElementById("sync-status"),
+    btnReload: document.getElementById("btn-reload"),
     btnSettings: document.getElementById("btn-settings"),
     btnAddRestaurant: document.getElementById("btn-add-restaurant"),
     btnPickOne: document.getElementById("btn-pick-one"),
@@ -69,8 +73,9 @@
     sortSelect: document.getElementById("sort-select"),
     btnReshuffle: document.getElementById("btn-reshuffle"),
     dynamicChips: document.querySelectorAll(".chip-quick"),
+    btnManageTags: document.getElementById("btn-manage-tags"),
     btnClearTags: document.getElementById("btn-clear-tags"),
-    // Grouped tag chip containers
+    // Grouped tag chip containers & inline selected chips
     groupGenreRow: document.getElementById("group-genre-row"),
     groupGenreChips: document.getElementById("group-genre-chips"),
     groupTimeRow: document.getElementById("group-time-row"),
@@ -79,6 +84,11 @@
     groupAreaChips: document.getElementById("group-area-chips"),
     groupOtherRow: document.getElementById("group-other-row"),
     groupOtherChips: document.getElementById("group-other-chips"),
+    selectedStateChips: document.getElementById("selected-state-chips"),
+    selectedGenreChips: document.getElementById("selected-genre-chips"),
+    selectedTimeChips: document.getElementById("selected-time-chips"),
+    selectedAreaChips: document.getElementById("selected-area-chips"),
+    selectedOtherChips: document.getElementById("selected-other-chips"),
     // Restaurant list & empty
     restaurantGrid: document.getElementById("restaurant-grid"),
     emptyState: document.getElementById("empty-state"),
@@ -113,18 +123,61 @@
     btnRouletteRetry: document.getElementById("btn-roulette-retry"),
     // Settings Modal
     modalSettings: document.getElementById("modal-settings"),
+    btnOpenTagsManager: document.getElementById("btn-open-tags-manager"),
     dropboxStatusBox: document.getElementById("dropbox-status-box"),
     btnDropboxConnect: document.getElementById("btn-dropbox-connect"),
     btnDropboxLogout: document.getElementById("btn-dropbox-logout"),
     btnDropboxSyncNow: document.getElementById("btn-dropbox-sync-now"),
     btnExportJson: document.getElementById("btn-export-json"),
     fileImportJson: document.getElementById("file-import-json"),
+    // Tag Manager Modal
+    modalTagsManager: document.getElementById("modal-tags-manager"),
+    btnPurgeUnusedTags: document.getElementById("btn-purge-unused-tags"),
+    countUnusedTags: document.getElementById("count-unused-tags"),
+    tabCountGenre: document.getElementById("tab-count-genre"),
+    tabCountTime: document.getElementById("tab-count-time"),
+    tabCountArea: document.getElementById("tab-count-area"),
+    tagsManagerList: document.getElementById("tags-manager-list"),
+    inputManagerAddTag: document.getElementById("input-manager-add-tag"),
+    btnManagerAddTag: document.getElementById("btn-manager-add-tag"),
     toastContainer: document.getElementById("toast-container"),
   };
 
   /* ==========================================================================
      Tag Management & Categorization
      ========================================================================== */
+  function deduplicateTagGroups(groups) {
+    if (!Array.isArray(groups)) return;
+    const genreGroup = groups.find((g) => g.id === "genre");
+    const timeGroup = groups.find((g) => g.id === "time");
+    const areaGroup = groups.find((g) => g.id === "area");
+
+    // Clean and deduplicate within each group
+    if (areaGroup && Array.isArray(areaGroup.tags)) {
+      areaGroup.tags = Array.from(new Set(areaGroup.tags.map((t) => (t || "").trim()).filter(Boolean)));
+    }
+    if (timeGroup && Array.isArray(timeGroup.tags)) {
+      timeGroup.tags = Array.from(new Set(timeGroup.tags.map((t) => (t || "").trim()).filter(Boolean)));
+    }
+    if (genreGroup && Array.isArray(genreGroup.tags)) {
+      genreGroup.tags = Array.from(new Set(genreGroup.tags.map((t) => (t || "").trim()).filter(Boolean)));
+    }
+
+    const areaTags = new Set(areaGroup?.tags || []);
+    const timeTags = new Set(timeGroup?.tags || []);
+
+    // 1. Time group must not contain tags that belong to Area
+    if (timeGroup && Array.isArray(timeGroup.tags)) {
+      timeGroup.tags = timeGroup.tags.filter((t) => !areaTags.has(t));
+    }
+
+    // 2. Genre group must not contain tags that belong to Area or Time
+    if (genreGroup && Array.isArray(genreGroup.tags)) {
+      const nonGenreTags = new Set([...areaTags, ...(timeGroup?.tags || [])]);
+      genreGroup.tags = genreGroup.tags.filter((t) => !nonGenreTags.has(t));
+    }
+  }
+
   function ensureTagGroups() {
     if (!state.data.tagGroups || !Array.isArray(state.data.tagGroups) || state.data.tagGroups.length === 0) {
       state.data.tagGroups = JSON.parse(JSON.stringify(DEFAULT_TAG_GROUPS));
@@ -135,42 +188,26 @@
         state.data.tagGroups.push({ id: def.id, name: def.name, tags: [] });
       }
     }
-    // Track any existing restaurant tags into corresponding groups if not present
-    (state.data.restaurants || []).forEach((r) => {
-      (r.tags || []).forEach((t) => {
-        let cat = getTagCategory(t);
-        if (cat === "other") cat = "genre";
-        let grp = state.data.tagGroups.find((g) => g.id === cat);
-        if (grp && !grp.tags.includes(t)) {
-          grp.tags.push(t);
-        }
-      });
-    });
+
+    // Clean up any cross-group duplication
+    deduplicateTagGroups(state.data.tagGroups);
   }
 
   function pruneUnusedTags() {
     ensureTagGroups();
-    const usedTags = new Set(state.formTags);
-    (state.data.restaurants || []).forEach((r) => {
-      (r.tags || []).forEach((t) => usedTags.add(t));
-    });
-    for (const group of state.data.tagGroups) {
-      if (Array.isArray(group.tags)) {
-        group.tags = group.tags.filter((t) => usedTags.has(t));
-      }
-    }
   }
 
-  function getTagCategory(tag) {
-    if (state.data?.tagGroups && Array.isArray(state.data.tagGroups)) {
-      for (const group of state.data.tagGroups) {
-        if (group.tags && group.tags.includes(tag)) return group.id;
+  // Lookup the group ID where the user explicitly registered this tag. Zero heuristic guessing.
+  function getTagCategory(tag, customGroups = null) {
+    const groups = customGroups || state.data?.tagGroups;
+    if (groups && Array.isArray(groups)) {
+      for (const group of groups) {
+        if (group.tags && group.tags.includes(tag)) {
+          return group.id;
+        }
       }
     }
-    // Heuristic categorization for legacy tags
-    if (/(?:分|歩|自転車|駅)/.test(tag)) return "time";
-    if (/(?:口|街|通り|側|北|南|東|西)/.test(tag)) return "area";
-    return "other";
+    return null;
   }
 
   function addTagToGroup(groupId, newTag) {
@@ -178,6 +215,14 @@
     if (!tag) return;
 
     ensureTagGroups();
+
+    // Enforce uniqueness across all groups: remove from other groups
+    for (const g of state.data.tagGroups) {
+      if (g.id !== groupId && Array.isArray(g.tags)) {
+        g.tags = g.tags.filter((t) => t !== tag);
+      }
+    }
+
     let group = state.data.tagGroups.find((g) => g.id === groupId);
     if (!group) {
       group = { id: groupId, name: groupId, tags: [] };
@@ -460,38 +505,134 @@
   }
 
   /* ==========================================================================
+     Multi-Device Data Merge & Concurrency Handling
+     ========================================================================== */
+  function mergeDatasets(localData, remoteData) {
+    if (!remoteData || !Array.isArray(remoteData.restaurants)) return localData;
+    if (!localData || !Array.isArray(localData.restaurants)) return remoteData;
+
+    // 1. Merge Restaurants (Union of restaurants, visits, and tags - never lose data)
+    const mergedRestaurantsMap = new Map();
+
+    // Start with remote restaurants
+    for (const r of remoteData.restaurants) {
+      if (r && r.id) {
+        mergedRestaurantsMap.set(r.id, JSON.parse(JSON.stringify(r)));
+      }
+    }
+
+    // Merge local restaurants
+    for (const localR of localData.restaurants) {
+      if (!localR || !localR.id) continue;
+      const remoteR = mergedRestaurantsMap.get(localR.id);
+      if (!remoteR) {
+        // Exists in local only: KEEP IT
+        mergedRestaurantsMap.set(localR.id, JSON.parse(JSON.stringify(localR)));
+      } else {
+        // Exists in both: merge visits and tags
+        const localTime = new Date(localR.updatedAt || 0).getTime();
+        const remoteTime = new Date(remoteR.updatedAt || 0).getTime();
+        const newerR = localTime >= remoteTime ? localR : remoteR;
+
+        // Union of visits
+        const visitsSet = new Set([...(localR.visits || []), ...(remoteR.visits || [])]);
+        const mergedVisits = Array.from(visitsSet).sort((a, b) => new Date(b) - new Date(a));
+
+        // Union of tags
+        const tagsSet = new Set([...(localR.tags || []), ...(remoteR.tags || [])]);
+        const mergedTags = Array.from(tagsSet);
+
+        const mergedR = {
+          ...newerR,
+          name: newerR.name || localR.name || remoteR.name,
+          visits: mergedVisits,
+          tags: mergedTags,
+          updatedAt: new Date(Math.max(localTime, remoteTime, Date.now())).toISOString(),
+        };
+        mergedRestaurantsMap.set(localR.id, mergedR);
+      }
+    }
+
+    // 2. Merge Tag Groups
+    const localGroups = localData.tagGroups || DEFAULT_TAG_GROUPS;
+    const remoteGroups = remoteData.tagGroups || DEFAULT_TAG_GROUPS;
+    const mergedTagGroups = [];
+
+    const allGroupIds = ["genre", "time", "area"];
+    for (const gid of allGroupIds) {
+      const lg = localGroups.find((g) => g.id === gid) || { tags: [] };
+      const rg = remoteGroups.find((g) => g.id === gid) || { tags: [] };
+      const name = lg.name || rg.name || gid;
+
+      const combined = [...(lg.tags || [])];
+      for (const t of rg.tags || []) {
+        if (!combined.includes(t)) {
+          combined.push(t);
+        }
+      }
+      mergedTagGroups.push({ id: gid, name, tags: combined });
+    }
+
+    // Deduplicate any cross-group duplication in merged groups
+    deduplicateTagGroups(mergedTagGroups);
+
+    const mergedRestaurants = Array.from(mergedRestaurantsMap.values());
+
+    return {
+      version: 1,
+      updatedAt: new Date().toISOString(),
+      tagGroups: mergedTagGroups,
+      restaurants: mergedRestaurants,
+    };
+  }
+
+  /* ==========================================================================
      Data Management
      ========================================================================== */
-  async function syncFromDropbox() {
+  async function syncFromDropbox(manual = false, silent = false) {
     const authToken = await token();
-    if (!authToken) return;
+    if (!authToken) {
+      if (manual) {
+        showToast("先に Dropbox と連携してください");
+        connectDropbox();
+      }
+      return;
+    }
 
-    setSyncingUI(true);
+    if (!silent) setSyncingUI(true);
     try {
       const res = await dbx("files/download", { path: DROPBOX_FILE_PATH });
       if (res && res.content) {
-        state.rev = res.metadata?.rev || null;
-        try {
-          const cloudData = JSON.parse(res.content);
-          if (cloudData && Array.isArray(cloudData.restaurants)) {
-            state.data = cloudData;
+        const cloudData = JSON.parse(res.content);
+        if (cloudData && Array.isArray(cloudData.restaurants)) {
+          const isDifferentRev = state.rev !== (res.metadata?.rev || null);
+          if (manual || isDifferentRev) {
+            state.data = mergeDatasets(state.data, cloudData);
+            state.rev = res.metadata?.rev || null;
             ensureTagGroups();
-            pruneUnusedTags();
             localStorage.setItem(STORAGE.cache, JSON.stringify(state.data));
+            render();
+            if (manual) {
+              showToast("最新データに同期しました");
+            } else if (isDifferentRev && !silent) {
+              showToast("他端末の更新を反映しました");
+            }
+          } else if (manual) {
+            showToast("データは最新です");
           }
-        } catch (parseErr) {
-          console.error("Failed to parse cloud data:", parseErr);
         }
       }
-      setSyncingUI(false);
+      if (!silent) setSyncingUI(false);
     } catch (err) {
       if (err.status === 409 || err.tag?.includes("not_found")) {
         await saveToDropbox();
-        setSyncingUI(false);
+        if (!silent) setSyncingUI(false);
       } else {
         console.error(err);
-        setSyncingUI(false, true);
-        showToast("Dropbox読み込み失敗");
+        if (!silent) {
+          setSyncingUI(false, true);
+          showToast("Dropbox読み込み失敗");
+        }
       }
     }
   }
@@ -516,18 +657,35 @@
       setSyncingUI(false);
     } catch (err) {
       if (err.status === 409) {
-        await syncFromDropbox();
-        const content = JSON.stringify(state.data, null, 2);
-        const args = {
-          path: DROPBOX_FILE_PATH,
-          mode: state.rev ? { ".tag": "update", update: state.rev } : "overwrite",
-          autorename: false,
-          mute: true,
-        };
-        const meta = await dbx("files/upload", args, content);
-        state.rev = meta.rev;
-        localStorage.setItem(STORAGE.cache, content);
-        setSyncingUI(false);
+        // Concurrency conflict! Merge remote and local data
+        try {
+          const res = await dbx("files/download", { path: DROPBOX_FILE_PATH });
+          if (res && res.content) {
+            const remoteData = JSON.parse(res.content);
+            state.data = mergeDatasets(state.data, remoteData);
+            state.rev = res.metadata?.rev || null;
+            ensureTagGroups();
+            render();
+
+            const mergedContent = JSON.stringify(state.data, null, 2);
+            const retryArgs = {
+              path: DROPBOX_FILE_PATH,
+              mode: state.rev ? { ".tag": "update", update: state.rev } : "overwrite",
+              autorename: false,
+              mute: true,
+            };
+            const meta = await dbx("files/upload", retryArgs, mergedContent);
+            state.rev = meta.rev;
+            localStorage.setItem(STORAGE.cache, mergedContent);
+            setSyncingUI(false);
+            showToast("他端末の更新と自動マージしました");
+            return;
+          }
+        } catch (mergeErr) {
+          console.error("Conflict merge failed:", mergeErr);
+        }
+        setSyncingUI(false, true);
+        showToast("競合が発生しました。再読み込みしてください");
       } else {
         setSyncingUI(false, true);
         showToast("Dropbox保存失敗");
@@ -700,9 +858,10 @@
     const timeGroup = state.data.tagGroups.find((g) => g.id === "time") || { tags: [] };
     const areaGroup = state.data.tagGroups.find((g) => g.id === "area") || { tags: [] };
 
-    const genreTags = genreGroup.tags.filter((t) => usedTags.has(t));
-    const timeTags = timeGroup.tags.filter((t) => usedTags.has(t));
-    const areaTags = areaGroup.tags.filter((t) => usedTags.has(t));
+    // Respect user-configured ordering
+    const genreTags = (genreGroup.tags || []).filter((t) => usedTags.has(t));
+    const timeTags = (timeGroup.tags || []).filter((t) => usedTags.has(t));
+    const areaTags = (areaGroup.tags || []).filter((t) => usedTags.has(t));
 
     // Other tags: usedTags that are not in genre, time, or area
     const knownSet = new Set([...genreGroup.tags, ...timeGroup.tags, ...areaGroup.tags]);
@@ -732,6 +891,70 @@
 
     el.groupOtherChips.innerHTML = makeChips(otherTags);
     el.groupOtherRow.style.display = otherTags.length > 0 ? "flex" : "none";
+
+    // When collapsed, render only selected tags next to group name
+    const makeSelectedChips = (tags) => {
+      const activeTags = tags.filter((t) => state.filter.tags.has(t));
+      return makeChips(activeTags);
+    };
+
+    if (el.selectedGenreChips) {
+      el.selectedGenreChips.innerHTML = makeSelectedChips(genreTags);
+      el.selectedGenreChips.style.display = el.selectedGenreChips.innerHTML ? "flex" : "none";
+    }
+    if (el.selectedTimeChips) {
+      el.selectedTimeChips.innerHTML = makeSelectedChips(timeTags);
+      el.selectedTimeChips.style.display = el.selectedTimeChips.innerHTML ? "flex" : "none";
+    }
+    if (el.selectedAreaChips) {
+      el.selectedAreaChips.innerHTML = makeSelectedChips(areaTags);
+      el.selectedAreaChips.style.display = el.selectedAreaChips.innerHTML ? "flex" : "none";
+    }
+    if (el.selectedOtherChips) {
+      el.selectedOtherChips.innerHTML = makeSelectedChips(otherTags);
+      el.selectedOtherChips.style.display = el.selectedOtherChips.innerHTML ? "flex" : "none";
+    }
+
+    if (el.selectedStateChips) {
+      if (state.filter.dynamic) {
+        const labels = {
+          unvisited: "🌱 未訪問",
+          neglected: "⏳ ご無沙汰",
+          recent: "🕒 最近",
+          frequent: "⭐️ 定番",
+        };
+        const label = labels[state.filter.dynamic] || state.filter.dynamic;
+        el.selectedStateChips.innerHTML = `
+          <button type="button" class="chip chip-quick active" data-filter="${escapeHtml(state.filter.dynamic)}">
+            ${escapeHtml(label)}
+          </button>
+        `;
+        el.selectedStateChips.style.display = "flex";
+      } else {
+        el.selectedStateChips.innerHTML = "";
+        el.selectedStateChips.style.display = "none";
+      }
+    }
+
+    // Update collapsed class on group rows
+    const updateGroupCollapsed = (rowEl, groupId) => {
+      if (rowEl) {
+        const isCollapsed = state.collapsedGroups.has(groupId);
+        rowEl.classList.toggle("collapsed", isCollapsed);
+      }
+    };
+
+    updateGroupCollapsed(document.getElementById("group-state-row"), "state");
+    updateGroupCollapsed(el.groupGenreRow, "genre");
+    updateGroupCollapsed(el.groupTimeRow, "time");
+    updateGroupCollapsed(el.groupAreaRow, "area");
+    updateGroupCollapsed(el.groupOtherRow, "other");
+
+    // Update active class on static dynamic chips in state row
+    el.dynamicChips.forEach((btn) => {
+      const filterType = btn.getAttribute("data-filter");
+      btn.classList.toggle("active", state.filter.dynamic === filterType);
+    });
 
     const hasActive = state.filter.tags.size > 0 || state.filter.dynamic !== null;
     el.btnClearTags.style.display = hasActive ? "inline-block" : "none";
@@ -886,32 +1109,29 @@
       el.btnDeleteRestaurant.style.display = "none";
     }
 
+    if (el.inputAddGenre) el.inputAddGenre.value = "";
+    if (el.inputAddTime) el.inputAddTime.value = "";
+    if (el.inputAddArea) el.inputAddArea.value = "";
+
     renderFormPresetChips();
     el.modalRestaurant.style.display = "flex";
     el.restaurantName.focus();
     lucide.createIcons();
   }
 
-  // Render preset chips inside modal by category
+  // Render preset chips inside modal by category in configured order
   function renderFormPresetChips() {
     ensureTagGroups();
 
-    // Only tags actually used in restaurants or currently selected in form
-    const usedTags = new Set(state.formTags);
-    (state.data.restaurants || []).forEach((r) => {
-      (r.tags || []).forEach((t) => usedTags.add(t));
-    });
-
     const renderGroup = (container, groupTags, groupId) => {
-      const tagsInGroup = new Set((groupTags || []).filter((t) => usedTags.has(t)));
-      usedTags.forEach((t) => {
-        if (getTagCategory(t) === groupId) {
-          tagsInGroup.add(t);
+      const tagsInGroup = [...(groupTags || [])];
+      state.formTags.forEach((t) => {
+        if (getTagCategory(t) === groupId && !tagsInGroup.includes(t)) {
+          tagsInGroup.push(t);
         }
       });
 
-      const list = Array.from(tagsInGroup);
-      container.innerHTML = list
+      container.innerHTML = tagsInGroup
         .map((tag) => {
           const isSelected = state.formTags.has(tag);
           return `
@@ -976,6 +1196,10 @@
     if (pendingTime) addTagToGroup("time", pendingTime);
     const pendingArea = el.inputAddArea.value.trim();
     if (pendingArea) addTagToGroup("area", pendingArea);
+
+    el.inputAddGenre.value = "";
+    el.inputAddTime.value = "";
+    el.inputAddArea.value = "";
 
     const tags = Array.from(state.formTags);
 
@@ -1151,6 +1375,284 @@
   }
 
   /* ==========================================================================
+     Tag Management (Reorder, Rename, Delete Unused)
+     ========================================================================== */
+  function openTagManagerModal(tab = null) {
+    if (tab) state.activeManagerTab = tab;
+    renderTagManagerList();
+    el.modalTagsManager.style.display = "flex";
+    lucide.createIcons();
+  }
+
+  function renderTagManagerList() {
+    ensureTagGroups();
+
+    // Count restaurant usage per tag
+    const usageCounts = {};
+    (state.data.restaurants || []).forEach((r) => {
+      (r.tags || []).forEach((t) => {
+        usageCounts[t] = (usageCounts[t] || 0) + 1;
+      });
+    });
+
+    // Count unused across ALL groups
+    let totalUnused = 0;
+    for (const group of state.data.tagGroups) {
+      for (const t of group.tags || []) {
+        if (!usageCounts[t]) totalUnused++;
+      }
+    }
+    el.countUnusedTags.textContent = totalUnused;
+    el.btnPurgeUnusedTags.disabled = totalUnused === 0;
+
+    // Update tab counts
+    const genreGroup = state.data.tagGroups.find((g) => g.id === "genre") || { tags: [] };
+    const timeGroup = state.data.tagGroups.find((g) => g.id === "time") || { tags: [] };
+    const areaGroup = state.data.tagGroups.find((g) => g.id === "area") || { tags: [] };
+
+    el.tabCountGenre.textContent = (genreGroup.tags || []).length;
+    el.tabCountTime.textContent = (timeGroup.tags || []).length;
+    el.tabCountArea.textContent = (areaGroup.tags || []).length;
+
+    // Tab buttons active state
+    document.querySelectorAll("[data-manager-tab]").forEach((btn) => {
+      const tabId = btn.getAttribute("data-manager-tab");
+      btn.classList.toggle("active", tabId === state.activeManagerTab);
+    });
+
+    const currentGroup = state.data.tagGroups.find((g) => g.id === state.activeManagerTab) || { tags: [] };
+    const tags = currentGroup.tags || [];
+
+    if (tags.length === 0) {
+      el.tagsManagerList.innerHTML = '<div class="tags-manager-empty">このグループに登録されたタグはありません</div>';
+      return;
+    }
+
+    el.tagsManagerList.innerHTML = tags
+      .map((tag, idx) => {
+        const count = usageCounts[tag] || 0;
+        const isFirst = idx === 0;
+        const isLast = idx === tags.length - 1;
+        const isRenaming =
+          state.renamingTag &&
+          state.renamingTag.groupId === state.activeManagerTab &&
+          state.renamingTag.tag === tag;
+
+        if (isRenaming) {
+          return `
+            <div class="tag-manager-item renaming" data-tag="${escapeHtml(tag)}">
+              <div class="tag-manager-rename-form">
+                <input type="text" class="input-inline-rename" id="input-rename-tag" value="${escapeHtml(tag)}" autocomplete="off" />
+                <button type="button" class="btn-icon-xs btn-save-rename" data-save-rename="${escapeHtml(tag)}" title="保存" aria-label="保存">
+                  <i data-lucide="check"></i>
+                </button>
+                <button type="button" class="btn-icon-xs btn-cancel-rename" data-cancel-rename title="キャンセル" aria-label="キャンセル">
+                  <i data-lucide="x"></i>
+                </button>
+              </div>
+            </div>
+          `;
+        }
+
+        return `
+          <div class="tag-manager-item" data-tag="${escapeHtml(tag)}">
+            <div class="tag-manager-item-left">
+              <span class="tag-manager-name">${escapeHtml(tag)}</span>
+              ${
+                count > 0
+                  ? `<span class="tag-manager-badge used">${count}店舗</span>`
+                  : '<span class="tag-manager-badge unused">未使用</span>'
+              }
+            </div>
+            <div class="tag-manager-actions">
+              <button type="button" class="btn-icon-xs btn-tag-up" data-tag-up="${escapeHtml(tag)}" title="上へ移動" aria-label="上へ移動" ${isFirst ? "disabled" : ""}>
+                <i data-lucide="arrow-up"></i>
+              </button>
+              <button type="button" class="btn-icon-xs btn-tag-down" data-tag-down="${escapeHtml(tag)}" title="下へ移動" aria-label="下へ移動" ${isLast ? "disabled" : ""}>
+                <i data-lucide="arrow-down"></i>
+              </button>
+              <button type="button" class="btn-icon-xs btn-tag-rename" data-tag-rename="${escapeHtml(tag)}" title="名前変更" aria-label="名前変更">
+                <i data-lucide="pencil"></i>
+              </button>
+              <button type="button" class="btn-icon-xs btn-tag-delete" data-tag-delete="${escapeHtml(tag)}" title="削除" aria-label="削除">
+                <i data-lucide="trash-2"></i>
+              </button>
+            </div>
+          </div>
+        `;
+      })
+      .join("");
+
+    lucide.createIcons();
+
+    if (state.renamingTag) {
+      const input = document.getElementById("input-rename-tag");
+      if (input) {
+        input.focus();
+        input.select();
+      }
+    }
+  }
+
+  function reorderTag(groupId, tag, direction) {
+    ensureTagGroups();
+    const group = state.data.tagGroups.find((g) => g.id === groupId);
+    if (!group || !Array.isArray(group.tags)) return;
+
+    const idx = group.tags.indexOf(tag);
+    if (idx < 0) return;
+
+    const newIdx = idx + direction;
+    if (newIdx < 0 || newIdx >= group.tags.length) return;
+
+    const temp = group.tags[idx];
+    group.tags[idx] = group.tags[newIdx];
+    group.tags[newIdx] = temp;
+
+    scheduleSave();
+    render();
+    renderTagManagerList();
+  }
+
+  function commitTagRename(groupId, oldTag, newName) {
+    state.renamingTag = null;
+    const trimmed = (newName || "").trim();
+    if (!trimmed || trimmed === oldTag) {
+      renderTagManagerList();
+      return;
+    }
+
+    ensureTagGroups();
+
+    // Remove new tag name from other groups if it existed there
+    for (const g of state.data.tagGroups) {
+      if (g.id !== groupId && Array.isArray(g.tags)) {
+        g.tags = g.tags.filter((t) => t !== trimmed);
+      }
+    }
+
+    const group = state.data.tagGroups.find((g) => g.id === groupId);
+    if (!group) return;
+
+    const idx = group.tags.indexOf(oldTag);
+    if (idx >= 0) {
+      if (group.tags.includes(trimmed)) {
+        group.tags.splice(idx, 1);
+      } else {
+        group.tags[idx] = trimmed;
+      }
+    }
+
+    let affectedCount = 0;
+    (state.data.restaurants || []).forEach((r) => {
+      if (r.tags && r.tags.includes(oldTag)) {
+        r.tags = r.tags.map((t) => (t === oldTag ? trimmed : t));
+        r.tags = Array.from(new Set(r.tags));
+        r.updatedAt = new Date().toISOString();
+        affectedCount++;
+      }
+    });
+
+    if (state.filter.tags.has(oldTag)) {
+      state.filter.tags.delete(oldTag);
+      state.filter.tags.add(trimmed);
+    }
+
+    scheduleSave();
+    render();
+    renderTagManagerList();
+    showToast(`「${oldTag}」を「${trimmed}」に変更しました（${affectedCount}店舗更新）`);
+  }
+
+  function deleteSingleTag(groupId, tag) {
+    ensureTagGroups();
+    const group = state.data.tagGroups.find((g) => g.id === groupId);
+    if (!group) return;
+
+    const usedCount = (state.data.restaurants || []).filter((r) => (r.tags || []).includes(tag)).length;
+    if (usedCount > 0) {
+      if (!confirm(`「${tag}」は ${usedCount}店舗 で使用されています。本当に削除しますか？\n（各店舗のタグからも削除されます）`)) {
+        return;
+      }
+      (state.data.restaurants || []).forEach((r) => {
+        if (r.tags && r.tags.includes(tag)) {
+          r.tags = r.tags.filter((t) => t !== tag);
+          r.updatedAt = new Date().toISOString();
+        }
+      });
+    }
+
+    group.tags = (group.tags || []).filter((t) => t !== tag);
+    state.filter.tags.delete(tag);
+
+    scheduleSave();
+    render();
+    renderTagManagerList();
+    showToast(`タグ「${tag}」を削除しました`);
+  }
+
+  function purgeAllUnusedTags() {
+    ensureTagGroups();
+    const usedTags = new Set();
+    (state.data.restaurants || []).forEach((r) => {
+      (r.tags || []).forEach((t) => usedTags.add(t));
+    });
+
+    let totalUnused = 0;
+    for (const group of state.data.tagGroups) {
+      for (const t of group.tags || []) {
+        if (!usedTags.has(t)) totalUnused++;
+      }
+    }
+
+    if (totalUnused === 0) {
+      showToast("未使用のタグはありません");
+      return;
+    }
+
+    if (!confirm(`現在使われていないタグ ${totalUnused} 個を一括削除しますか？`)) {
+      return;
+    }
+
+    for (const group of state.data.tagGroups) {
+      group.tags = (group.tags || []).filter((t) => usedTags.has(t));
+    }
+
+    scheduleSave();
+    render();
+    renderTagManagerList();
+    showToast(`未使用タグ ${totalUnused} 個を削除しました`);
+  }
+
+  function addNewTagInManager(groupId, tagName) {
+    const tag = (tagName || "").trim();
+    if (!tag) return;
+
+    ensureTagGroups();
+
+    // Remove from other groups if it existed there
+    for (const g of state.data.tagGroups) {
+      if (g.id !== groupId && Array.isArray(g.tags)) {
+        g.tags = g.tags.filter((t) => t !== tag);
+      }
+    }
+
+    const group = state.data.tagGroups.find((g) => g.id === groupId);
+    if (!group) return;
+
+    if (!group.tags.includes(tag)) {
+      group.tags.push(tag);
+      deduplicateTagGroups(state.data.tagGroups);
+      scheduleSave();
+      render();
+      renderTagManagerList();
+      showToast(`タグ「${tag}」を追加しました`);
+    } else {
+      showToast("既に存在するタグです");
+    }
+  }
+
+  /* ==========================================================================
      Toast & Modal Utilities
      ========================================================================== */
   function showToast(message, options = {}) {
@@ -1222,45 +1724,10 @@
       showToast("シャッフルしました");
     });
 
-    // Dynamic Filter Chips (状態)
-    el.dynamicChips.forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const filterType = btn.getAttribute("data-filter");
-        if (state.filter.dynamic === filterType) {
-          state.filter.dynamic = null;
-          btn.classList.remove("active");
-        } else {
-          state.filter.dynamic = filterType;
-          el.dynamicChips.forEach((b) => b.classList.remove("active"));
-          btn.classList.add("active");
-        }
-        render();
-      });
-    });
-
-    // Tag Group Chips (Filter toggle)
-    const handleTagClick = (e) => {
-      const btn = e.target.closest("[data-tag]");
-      if (!btn) return;
-      const tag = btn.getAttribute("data-tag");
-      if (state.filter.tags.has(tag)) {
-        state.filter.tags.delete(tag);
-      } else {
-        state.filter.tags.add(tag);
-      }
-      render();
-    };
-
-    el.groupGenreChips.addEventListener("click", handleTagClick);
-    el.groupTimeChips.addEventListener("click", handleTagClick);
-    el.groupAreaChips.addEventListener("click", handleTagClick);
-    el.groupOtherChips.addEventListener("click", handleTagClick);
-
     // Clear Tags & Dynamic Filter
     el.btnClearTags.addEventListener("click", () => {
       state.filter.tags.clear();
       state.filter.dynamic = null;
-      el.dynamicChips.forEach((b) => b.classList.remove("active"));
       render();
     });
 
@@ -1307,6 +1774,195 @@
     });
 
     el.btnRouletteRetry.addEventListener("click", startRoulette);
+
+    // Reload / Sync button
+    el.btnReload.addEventListener("click", async () => {
+      const icon = el.btnReload.querySelector("i");
+      if (icon) icon.classList.add("spinning");
+      await syncFromDropbox(true);
+      if (icon) icon.classList.remove("spinning");
+    });
+
+    // Window focus & visibility for multi-device sync
+    window.addEventListener("focus", () => {
+      if (getAuth() && el.modalRestaurant.style.display !== "flex" && el.modalTagsManager.style.display !== "flex") {
+        syncFromDropbox(false, true);
+      }
+    });
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible" && getAuth() && el.modalRestaurant.style.display !== "flex") {
+        syncFromDropbox(false, true);
+      }
+    });
+
+    // Collapsible Tag Groups (toggles when clicking bar, ignoring chip clicks)
+    document.querySelectorAll(".tag-group-header-bar").forEach((bar) => {
+      bar.addEventListener("click", (e) => {
+        if (e.target.closest(".chip")) return;
+        const groupId = bar.getAttribute("data-toggle-group");
+        const row = bar.closest(".tag-group-row");
+        if (!row) return;
+        const isCollapsed = row.classList.toggle("collapsed");
+        if (isCollapsed) {
+          state.collapsedGroups.add(groupId);
+        } else {
+          state.collapsedGroups.delete(groupId);
+        }
+        localStorage.setItem("lunchdeck.collapsed_groups", JSON.stringify(Array.from(state.collapsedGroups)));
+      });
+    });
+
+    // Delegated click handler on tag container for all chips (regular & inline selected)
+    const tagGroupsContainer = document.querySelector(".tag-groups-container");
+    if (tagGroupsContainer) {
+      tagGroupsContainer.addEventListener("click", (e) => {
+        const chip = e.target.closest(".chip");
+        if (!chip) return;
+
+        const dynFilter = chip.getAttribute("data-filter");
+        if (dynFilter) {
+          state.filter.dynamic = state.filter.dynamic === dynFilter ? null : dynFilter;
+          render();
+          return;
+        }
+
+        const tag = chip.getAttribute("data-tag");
+        if (tag) {
+          if (state.filter.tags.has(tag)) {
+            state.filter.tags.delete(tag);
+          } else {
+            state.filter.tags.add(tag);
+          }
+          render();
+          return;
+        }
+      });
+    }
+
+    // Open Tag Manager
+    if (el.btnManageTags) {
+      el.btnManageTags.addEventListener("click", () => openTagManagerModal());
+    }
+    if (el.btnOpenTagsManager) {
+      el.btnOpenTagsManager.addEventListener("click", () => {
+        closeModal(el.modalSettings);
+        openTagManagerModal();
+      });
+    }
+
+    // Tag Manager Tabs & List Actions
+    document.querySelectorAll("[data-manager-tab]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        state.activeManagerTab = btn.getAttribute("data-manager-tab");
+        renderTagManagerList();
+      });
+    });
+
+    el.btnPurgeUnusedTags.addEventListener("click", purgeAllUnusedTags);
+
+    el.tagsManagerList.addEventListener("click", (e) => {
+      const btnUp = e.target.closest("[data-tag-up]");
+      if (btnUp) {
+        reorderTag(state.activeManagerTab, btnUp.getAttribute("data-tag-up"), -1);
+        return;
+      }
+      const btnDown = e.target.closest("[data-tag-down]");
+      if (btnDown) {
+        reorderTag(state.activeManagerTab, btnDown.getAttribute("data-tag-down"), 1);
+        return;
+      }
+      const btnRename = e.target.closest("[data-tag-rename]");
+      if (btnRename) {
+        state.renamingTag = {
+          groupId: state.activeManagerTab,
+          tag: btnRename.getAttribute("data-tag-rename"),
+        };
+        renderTagManagerList();
+        return;
+      }
+      const btnSaveRename = e.target.closest("[data-save-rename]");
+      if (btnSaveRename) {
+        const input = document.getElementById("input-rename-tag");
+        commitTagRename(state.activeManagerTab, btnSaveRename.getAttribute("data-save-rename"), input ? input.value : "");
+        return;
+      }
+      const btnCancelRename = e.target.closest("[data-cancel-rename]");
+      if (btnCancelRename) {
+        state.renamingTag = null;
+        renderTagManagerList();
+        return;
+      }
+      const btnDelete = e.target.closest("[data-tag-delete]");
+      if (btnDelete) {
+        deleteSingleTag(state.activeManagerTab, btnDelete.getAttribute("data-tag-delete"));
+        return;
+      }
+    });
+
+    // Keyboard handling for inline rename in Tag Manager
+    let renameIsComposing = false;
+    let renameJustEnded = false;
+    el.tagsManagerList.addEventListener("compositionstart", (e) => {
+      if (e.target.id === "input-rename-tag") {
+        renameIsComposing = true;
+        renameJustEnded = false;
+      }
+    });
+    el.tagsManagerList.addEventListener("compositionend", (e) => {
+      if (e.target.id === "input-rename-tag") {
+        renameIsComposing = false;
+        renameJustEnded = true;
+        setTimeout(() => { renameJustEnded = false; }, 60);
+      }
+    });
+    el.tagsManagerList.addEventListener("keydown", (e) => {
+      if (e.target.id === "input-rename-tag") {
+        if (e.key === "Escape") {
+          e.preventDefault();
+          state.renamingTag = null;
+          renderTagManagerList();
+          return;
+        }
+        if (e.key === "Enter") {
+          if (e.isComposing || e.keyCode === 229 || renameIsComposing || renameJustEnded) return;
+          e.preventDefault();
+          if (state.renamingTag) {
+            commitTagRename(state.renamingTag.groupId, state.renamingTag.tag, e.target.value);
+          }
+        }
+      }
+    });
+
+    // Add Tag in Tag Manager (with IME protection)
+    let managerAddIsComposing = false;
+    let managerAddJustEnded = false;
+    el.inputManagerAddTag.addEventListener("compositionstart", () => {
+      managerAddIsComposing = true;
+      managerAddJustEnded = false;
+    });
+    el.inputManagerAddTag.addEventListener("compositionend", () => {
+      managerAddIsComposing = false;
+      managerAddJustEnded = true;
+      setTimeout(() => { managerAddJustEnded = false; }, 60);
+    });
+    el.inputManagerAddTag.addEventListener("keydown", (e) => {
+      if (e.isComposing || e.keyCode === 229 || managerAddIsComposing || managerAddJustEnded) return;
+      if (e.key === "Enter") {
+        e.preventDefault();
+        const val = el.inputManagerAddTag.value;
+        if (val.trim()) {
+          addNewTagInManager(state.activeManagerTab, val);
+          el.inputManagerAddTag.value = "";
+        }
+      }
+    });
+    el.btnManagerAddTag.addEventListener("click", () => {
+      const val = el.inputManagerAddTag.value;
+      if (val.trim()) {
+        addNewTagInManager(state.activeManagerTab, val);
+        el.inputManagerAddTag.value = "";
+      }
+    });
 
     // Header buttons
     el.btnAddRestaurant.addEventListener("click", () => openRestaurantModal());
@@ -1395,12 +2051,22 @@
       });
 
       inputEl.addEventListener("keydown", (e) => {
-        // Ignore Enter while IME conversion is in progress or just confirmed
-        if (e.isComposing || e.keyCode === 229 || isComposing || justEndedComposition) {
+        if (e.key === "Enter") {
+          // Prevent premature form submit during IME conversion
+          if (e.isComposing || e.keyCode === 229 || isComposing || justEndedComposition) {
+            e.preventDefault();
+            return;
+          }
+          e.preventDefault();
+          const val = inputEl.value.trim().replace(/^,+|,+$/g, "");
+          if (val) {
+            addTagToGroup(groupId, val);
+            inputEl.value = "";
+          }
           return;
         }
 
-        if (e.key === "Enter" || e.key === ",") {
+        if (e.key === ",") {
           e.preventDefault();
           const val = inputEl.value.trim().replace(/^,+|,+$/g, "");
           if (val) {

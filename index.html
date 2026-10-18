@@ -2,7 +2,7 @@
 <html lang="ja">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <meta name="theme-color" content="#FF5722" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -29,6 +29,9 @@
 
         <div class="header-actions">
           <div id="sync-status" class="sync-dot" title="保存状態"></div>
+          <button id="btn-reload" class="btn-icon" aria-label="同期・再読み込み" title="同期・再読み込み">
+            <i data-lucide="rotate-cw"></i>
+          </button>
           <button id="btn-add-restaurant" class="btn-icon" aria-label="お店を追加" title="お店を追加">
             <i data-lucide="plus"></i>
           </button>
@@ -75,15 +78,23 @@
               </button>
             </div>
 
+            <button id="btn-manage-tags" class="btn-text-manage" title="タグを整理">
+              <i data-lucide="tag"></i>
+              <span>タグ整理</span>
+            </button>
             <button id="btn-clear-tags" class="btn-text-reset" style="display:none;">解除</button>
           </div>
 
           <!-- Grouped Tag Filters -->
           <div class="tag-groups-container">
             <!-- Quick State Group -->
-            <div class="tag-group-row">
-              <span class="tag-group-title">状態</span>
-              <div class="tag-group-chips">
+            <div class="tag-group-row" id="group-state-row">
+              <div class="tag-group-header-bar" data-toggle-group="state">
+                <span class="tag-group-title">状態</span>
+                <div class="tag-group-selected-inline" id="selected-state-chips" style="display:none;"></div>
+                <i data-lucide="chevron-down" class="group-chevron"></i>
+              </div>
+              <div class="tag-group-chips" id="group-state-chips">
                 <button type="button" class="chip chip-quick" data-filter="unvisited">🌱 未訪問</button>
                 <button type="button" class="chip chip-quick" data-filter="neglected">⏳ ご無沙汰</button>
                 <button type="button" class="chip chip-quick" data-filter="recent">🕒 最近</button>
@@ -92,26 +103,42 @@
             </div>
 
             <!-- Genre Group -->
-            <div class="tag-group-row" id="group-genre-row">
-              <span class="tag-group-title">ジャンル</span>
+            <div class="tag-group-row" id="group-genre-row" style="display:none;">
+              <div class="tag-group-header-bar" data-toggle-group="genre">
+                <span class="tag-group-title">ジャンル</span>
+                <div class="tag-group-selected-inline" id="selected-genre-chips" style="display:none;"></div>
+                <i data-lucide="chevron-down" class="group-chevron"></i>
+              </div>
               <div class="tag-group-chips" id="group-genre-chips"></div>
             </div>
 
             <!-- Time Group -->
-            <div class="tag-group-row" id="group-time-row">
-              <span class="tag-group-title">時間</span>
+            <div class="tag-group-row" id="group-time-row" style="display:none;">
+              <div class="tag-group-header-bar" data-toggle-group="time">
+                <span class="tag-group-title">時間</span>
+                <div class="tag-group-selected-inline" id="selected-time-chips" style="display:none;"></div>
+                <i data-lucide="chevron-down" class="group-chevron"></i>
+              </div>
               <div class="tag-group-chips" id="group-time-chips"></div>
             </div>
 
             <!-- Area Group -->
-            <div class="tag-group-row" id="group-area-row">
-              <span class="tag-group-title">方面</span>
+            <div class="tag-group-row" id="group-area-row" style="display:none;">
+              <div class="tag-group-header-bar" data-toggle-group="area">
+                <span class="tag-group-title">方面</span>
+                <div class="tag-group-selected-inline" id="selected-area-chips" style="display:none;"></div>
+                <i data-lucide="chevron-down" class="group-chevron"></i>
+              </div>
               <div class="tag-group-chips" id="group-area-chips"></div>
             </div>
 
             <!-- Other Group (Custom Tags not in defined groups) -->
             <div class="tag-group-row" id="group-other-row" style="display:none;">
-              <span class="tag-group-title">その他</span>
+              <div class="tag-group-header-bar" data-toggle-group="other">
+                <span class="tag-group-title">その他</span>
+                <div class="tag-group-selected-inline" id="selected-other-chips" style="display:none;"></div>
+                <i data-lucide="chevron-down" class="group-chevron"></i>
+              </div>
               <div class="tag-group-chips" id="group-other-chips"></div>
             </div>
           </div>
@@ -316,6 +343,59 @@
             </div>
 
 
+            <!-- Tag Management -->
+            <div class="settings-section">
+              <h4>
+                <i data-lucide="tags"></i>
+                <span>タグの整理</span>
+              </h4>
+              <p class="settings-desc">
+                タグの並べ替え、名前変更（一括更新）、未使用タグの削除を行えます。
+              </p>
+              <div class="settings-btn-row">
+                <button type="button" id="btn-open-tags-manager" class="btn btn-secondary btn-full">
+                  <i data-lucide="sliders-horizontal"></i> タグを整理する
+                </button>
+              </div>
+            </div>
+
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-close-modal>閉じる</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Modal: Tag Manager -->
+      <div id="modal-tags-manager" class="modal-backdrop" style="display:none;" role="dialog" aria-modal="true">
+        <div class="modal-card modal-tags-card">
+          <header class="modal-header">
+            <h3>タグの整理</h3>
+            <button class="btn-icon-sub" data-close-modal aria-label="閉じる">
+              <i data-lucide="x"></i>
+            </button>
+          </header>
+          <div class="modal-body tags-manager-body">
+            <div class="tags-manager-toolbar">
+              <span class="tags-manager-info">並べ替え・一括変更・削除</span>
+              <button type="button" id="btn-purge-unused-tags" class="btn-outline-danger-sm">
+                <i data-lucide="trash-2"></i>
+                <span>未使用タグを一括削除 (<span id="count-unused-tags">0</span>)</span>
+              </button>
+            </div>
+
+            <div class="tags-manager-tabs">
+              <button type="button" class="tab-btn active" data-manager-tab="genre">ジャンル (<span id="tab-count-genre">0</span>)</button>
+              <button type="button" class="tab-btn" data-manager-tab="time">時間 (<span id="tab-count-time">0</span>)</button>
+              <button type="button" class="tab-btn" data-manager-tab="area">方面 (<span id="tab-count-area">0</span>)</button>
+            </div>
+
+            <div id="tags-manager-list" class="tags-manager-list"></div>
+
+            <div class="tags-manager-add-row">
+              <input type="text" id="input-manager-add-tag" placeholder="新しいタグ名を入力してEnter..." autocomplete="off" />
+              <button type="button" id="btn-manager-add-tag" class="btn-primary-sm">追加</button>
+            </div>
           </div>
           <div class="modal-footer">
             <button type="button" class="btn btn-secondary" data-close-modal>閉じる</button>
