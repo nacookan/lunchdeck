@@ -68,6 +68,8 @@
     btnSettings: document.getElementById("btn-settings"),
     btnAddRestaurant: document.getElementById("btn-add-restaurant"),
     btnPickOne: document.getElementById("btn-pick-one"),
+    btnPickElimination: document.getElementById("btn-pick-elimination"),
+    btnPickTournament: document.getElementById("btn-pick-tournament"),
     searchInput: document.getElementById("search-input"),
     btnClearSearch: document.getElementById("btn-clear-search"),
     sortSelect: document.getElementById("sort-select"),
@@ -121,6 +123,38 @@
     rouletteMeta: document.getElementById("roulette-meta"),
     btnRouletteAccept: document.getElementById("btn-roulette-accept"),
     btnRouletteRetry: document.getElementById("btn-roulette-retry"),
+    // Elimination Modal
+    modalElimination: document.getElementById("modal-elimination"),
+    eliminationStepBadge: document.getElementById("elimination-step-badge"),
+    eliminationModalTitle: document.getElementById("elimination-modal-title"),
+    eliminationActiveView: document.getElementById("elimination-active-view"),
+    eliminationInstruction: document.getElementById("elimination-instruction"),
+    eliminationCounter: document.getElementById("elimination-counter"),
+    eliminationCardsGrid: document.getElementById("elimination-cards-grid"),
+    btnEliminationNext: document.getElementById("btn-elimination-next"),
+    eliminationWinnerView: document.getElementById("elimination-winner-view"),
+    eliminationWinnerName: document.getElementById("elimination-winner-name"),
+    eliminationWinnerTags: document.getElementById("elimination-winner-tags"),
+    eliminationWinnerMeta: document.getElementById("elimination-winner-meta"),
+    btnEliminationAccept: document.getElementById("btn-elimination-accept"),
+    btnEliminationRetry: document.getElementById("btn-elimination-retry"),
+    // Tournament Modal
+    modalTournament: document.getElementById("modal-tournament"),
+    tournamentStepBadge: document.getElementById("tournament-step-badge"),
+    tournamentModalTitle: document.getElementById("tournament-modal-title"),
+    tournamentActiveView: document.getElementById("tournament-active-view"),
+    tournamentInstruction: document.getElementById("tournament-instruction"),
+    tournamentCounter: document.getElementById("tournament-counter"),
+    tournamentCardA: document.getElementById("tournament-card-a"),
+    tournamentContentA: document.getElementById("tournament-content-a"),
+    tournamentCardB: document.getElementById("tournament-card-b"),
+    tournamentContentB: document.getElementById("tournament-content-b"),
+    tournamentWinnerView: document.getElementById("tournament-winner-view"),
+    tournamentWinnerName: document.getElementById("tournament-winner-name"),
+    tournamentWinnerTags: document.getElementById("tournament-winner-tags"),
+    tournamentWinnerMeta: document.getElementById("tournament-winner-meta"),
+    btnTournamentAccept: document.getElementById("btn-tournament-accept"),
+    btnTournamentRetry: document.getElementById("btn-tournament-retry"),
     // Settings Modal
     modalSettings: document.getElementById("modal-settings"),
     btnOpenTagsManager: document.getElementById("btn-open-tags-manager"),
@@ -753,12 +787,27 @@
       }
     }
 
-    // 3. Tags filter (AND match across selected tags)
+    // 3. Tags filter: OR within the same group, AND across different groups
     if (state.filter.tags.size > 0) {
-      const selected = Array.from(state.filter.tags);
+      const activeGroups = new Map();
+      for (const tag of state.filter.tags) {
+        const cat = getTagCategory(tag) || "other";
+        if (!activeGroups.has(cat)) {
+          activeGroups.set(cat, []);
+        }
+        activeGroups.get(cat).push(tag);
+      }
+
       list = list.filter((r) => {
         const rTags = new Set(r.tags || []);
-        return selected.every((t) => rTags.has(t));
+        // Inter-group AND: must satisfy every selected tag group
+        for (const tagsInGroup of activeGroups.values()) {
+          // Intra-group OR: must match at least one tag in this group
+          if (!tagsInGroup.some((t) => rTags.has(t))) {
+            return false;
+          }
+        }
+        return true;
       });
     }
 
@@ -967,7 +1016,10 @@
 
     const isShuffleSort = state.filter.sort === "smart" || state.filter.sort === "random";
     el.btnReshuffle.style.display = isShuffleSort ? "inline-flex" : "none";
-    el.btnPickOne.disabled = filtered.length === 0;
+    const hasFiltered = filtered.length > 0;
+    el.btnPickOne.disabled = !hasFiltered;
+    if (el.btnPickElimination) el.btnPickElimination.disabled = !hasFiltered;
+    if (el.btnPickTournament) el.btnPickTournament.disabled = !hasFiltered;
 
     if (filtered.length === 0) {
       el.restaurantGrid.innerHTML = "";
@@ -1309,6 +1361,413 @@
       } catch {}
     }
 
+    lucide.createIcons();
+  }
+
+  /* ==========================================================================
+     Elimination Decider (消去法で決める)
+     ========================================================================== */
+  let eliminationState = null;
+
+  function startElimination() {
+    if (!getAuth()) {
+      showToast("先に Dropbox と連携してください");
+      connectDropbox();
+      return;
+    }
+    const filtered = getFilteredRestaurants();
+    if (filtered.length === 0) {
+      showToast("条件に合うお店がありません");
+      return;
+    }
+
+    if (filtered.length === 1) {
+      showEliminationWinner(filtered[0]);
+      return;
+    }
+
+    // Candidate genres from the current filtered restaurants
+    const availableGenres = Array.from(
+      new Set(
+        filtered.flatMap((r) =>
+          (r.tags || []).filter((t) => getTagCategory(t) === "genre")
+        )
+      )
+    );
+
+    el.modalElimination.style.display = "flex";
+    el.eliminationActiveView.style.display = "flex";
+    el.eliminationWinnerView.style.display = "none";
+
+    // If we have 2 or more genre tags, start with Genre Elimination!
+    if (availableGenres.length >= 2) {
+      eliminationState = {
+        phase: "genre",
+        allCandidates: uniformShuffle(availableGenres, Math.random()),
+        candidateIndex: 0,
+        eliminatedInBatch: new Set(),
+        survivingInRound: [],
+        filteredPool: filtered,
+      };
+    } else {
+      // Skip directly to Restaurant Elimination!
+      eliminationState = {
+        phase: "restaurant",
+        allCandidates: uniformShuffle(filtered, Math.random()),
+        candidateIndex: 0,
+        eliminatedInBatch: new Set(),
+        survivingInRound: [],
+        filteredPool: filtered,
+      };
+    }
+
+    renderEliminationBatch();
+  }
+
+  function renderEliminationBatch() {
+    if (!eliminationState) return;
+
+    const { phase, allCandidates, candidateIndex } = eliminationState;
+    const batchSize = 4;
+    const currentBatch = allCandidates.slice(candidateIndex, candidateIndex + batchSize);
+    eliminationState.currentBatch = currentBatch;
+    eliminationState.eliminatedInBatch = new Set();
+
+    const isGenre = phase === "genre";
+    el.eliminationStepBadge.textContent = isGenre ? "STEP 1: ジャンル" : "STEP 2: お店";
+    el.eliminationInstruction.textContent = isGenre
+      ? "「今回は違うな」というジャンルを除外"
+      : "「今回は違うな」というお店を除外";
+
+    const remainingTotal = allCandidates.length - candidateIndex;
+    el.eliminationCounter.textContent = `残り ${remainingTotal} 個`;
+
+    el.eliminationCardsGrid.innerHTML = currentBatch
+      .map((item, idx) => {
+        if (isGenre) {
+          const tag = item;
+          return `
+            <div class="elimination-card" data-elim-idx="${idx}">
+              <span class="elimination-badge-status">✕ 除外</span>
+              <div class="elimination-card-name">${escapeHtml(tag)}</div>
+            </div>
+          `;
+        } else {
+          const restaurant = item;
+          const meta = formatCompactMeta(restaurant);
+          const tagsStr = (restaurant.tags || []).slice(0, 3).join(" · ");
+          return `
+            <div class="elimination-card" data-elim-idx="${idx}">
+              <span class="elimination-badge-status">✕ 除外</span>
+              <div class="elimination-card-name">${escapeHtml(restaurant.name)}</div>
+              ${tagsStr ? `<div class="elimination-card-meta">${escapeHtml(tagsStr)}</div>` : ""}
+              ${meta.text ? `<div class="elimination-card-meta">${escapeHtml(meta.text)}</div>` : ""}
+            </div>
+          `;
+        }
+      })
+      .join("");
+
+    updateEliminationNextButtonText();
+    lucide.createIcons();
+  }
+
+  function updateEliminationNextButtonText() {
+    if (!eliminationState) return;
+    const count = eliminationState.eliminatedInBatch.size;
+    const btnSpan = el.btnEliminationNext.querySelector("span");
+    if (btnSpan) {
+      if (count === 0) {
+        btnSpan.textContent = "すべて残して次へ";
+      } else {
+        btnSpan.textContent = `${count}個を除外して次へ`;
+      }
+    }
+  }
+
+  function handleEliminationCardClick(idx) {
+    if (!eliminationState || !eliminationState.currentBatch) return;
+    const item = eliminationState.currentBatch[idx];
+    if (!item) return;
+
+    if (eliminationState.eliminatedInBatch.has(item)) {
+      eliminationState.eliminatedInBatch.delete(item);
+    } else {
+      eliminationState.eliminatedInBatch.add(item);
+    }
+
+    const card = el.eliminationCardsGrid.querySelector(`[data-elim-idx="${idx}"]`);
+    if (card) {
+      card.classList.toggle("eliminated", eliminationState.eliminatedInBatch.has(item));
+    }
+    updateEliminationNextButtonText();
+  }
+
+  function handleEliminationNext() {
+    if (!eliminationState) return;
+
+    // Filter out eliminated items from currentBatch and add survivors
+    const survivors = eliminationState.currentBatch.filter(
+      (item) => !eliminationState.eliminatedInBatch.has(item)
+    );
+    eliminationState.survivingInRound.push(...survivors);
+
+    eliminationState.candidateIndex += 4;
+
+    // If there are more candidates in the current round
+    if (eliminationState.candidateIndex < eliminationState.allCandidates.length) {
+      renderEliminationBatch();
+      return;
+    }
+
+    // End of round!
+    let roundSurvivors = eliminationState.survivingInRound;
+
+    // Safety: If user eliminated literally everything in the round, restore all
+    if (roundSurvivors.length === 0) {
+      showToast("すべて除外されたため、全員復活します！");
+      roundSurvivors = [...eliminationState.allCandidates];
+    }
+
+    if (eliminationState.phase === "genre") {
+      // Transition from Genre phase to Restaurant phase
+      const survivingGenreSet = new Set(roundSurvivors);
+      let matchingRestaurants = eliminationState.filteredPool.filter((r) =>
+        (r.tags || []).some((t) => survivingGenreSet.has(t))
+      );
+      if (matchingRestaurants.length === 0) {
+        matchingRestaurants = eliminationState.filteredPool;
+      }
+
+      if (matchingRestaurants.length === 1) {
+        showEliminationWinner(matchingRestaurants[0]);
+        return;
+      }
+
+      eliminationState.phase = "restaurant";
+      eliminationState.allCandidates = uniformShuffle(matchingRestaurants, Math.random());
+      eliminationState.candidateIndex = 0;
+      eliminationState.survivingInRound = [];
+      renderEliminationBatch();
+      return;
+    }
+
+    // In Restaurant phase:
+    if (roundSurvivors.length === 1) {
+      showEliminationWinner(roundSurvivors[0]);
+      return;
+    }
+
+    // Still > 1 restaurants! Start next reduction round
+    eliminationState.allCandidates = uniformShuffle(roundSurvivors, Math.random());
+    eliminationState.candidateIndex = 0;
+    eliminationState.survivingInRound = [];
+    renderEliminationBatch();
+  }
+
+  function showEliminationWinner(restaurant) {
+    el.modalElimination.style.display = "flex";
+    el.eliminationActiveView.style.display = "none";
+    el.eliminationWinnerView.style.display = "flex";
+
+    el.eliminationWinnerName.textContent = restaurant.name;
+    const meta = formatCompactMeta(restaurant);
+    el.eliminationWinnerMeta.textContent = meta.text;
+
+    el.eliminationWinnerTags.innerHTML = (restaurant.tags || [])
+      .map((t) => `<span class="chip">${escapeHtml(t)}</span>`)
+      .join("");
+
+    if (typeof confetti === "function") {
+      try {
+        confetti({ particleCount: 50, spread: 70, origin: { y: 0.6 } });
+      } catch {}
+    }
+
+    el.btnEliminationAccept.onclick = () => {
+      recordVisit(restaurant.id);
+      closeModal(el.modalElimination);
+    };
+    el.btnEliminationRetry.onclick = () => {
+      startElimination();
+    };
+    lucide.createIcons();
+  }
+
+  /* ==========================================================================
+     Tournament Decider (勝ち抜き制で決める)
+     ========================================================================== */
+  let tournamentState = null;
+
+  function startTournament() {
+    if (!getAuth()) {
+      showToast("先に Dropbox と連携してください");
+      connectDropbox();
+      return;
+    }
+    const filtered = getFilteredRestaurants();
+    if (filtered.length === 0) {
+      showToast("条件に合うお店がありません");
+      return;
+    }
+
+    if (filtered.length === 1) {
+      showTournamentWinner(filtered[0]);
+      return;
+    }
+
+    // Candidate genres from current filtered restaurants
+    const availableGenres = uniformShuffle(
+      Array.from(
+        new Set(
+          filtered.flatMap((r) =>
+            (r.tags || []).filter((t) => getTagCategory(t) === "genre")
+          )
+        )
+      ),
+      Math.random()
+    );
+
+    el.modalTournament.style.display = "flex";
+    el.tournamentActiveView.style.display = "flex";
+    el.tournamentWinnerView.style.display = "none";
+
+    if (availableGenres.length >= 2) {
+      tournamentState = {
+        phase: "genre",
+        champion: availableGenres[0],
+        challengers: availableGenres.slice(1),
+        challengerIndex: 0,
+        totalMatches: availableGenres.length - 1,
+        matchNum: 1,
+        filteredPool: filtered,
+      };
+    } else {
+      // Skip directly to Restaurant Tournament!
+      const shuffledRestaurants = uniformShuffle(filtered, Math.random());
+      tournamentState = {
+        phase: "restaurant",
+        champion: shuffledRestaurants[0],
+        challengers: shuffledRestaurants.slice(1),
+        challengerIndex: 0,
+        totalMatches: shuffledRestaurants.length - 1,
+        matchNum: 1,
+        filteredPool: filtered,
+      };
+    }
+
+    renderTournamentMatch();
+  }
+
+  function renderTournamentMatch() {
+    if (!tournamentState) return;
+
+    const { phase, champion, challengers, challengerIndex, totalMatches, matchNum } = tournamentState;
+    const isGenre = phase === "genre";
+
+    el.tournamentStepBadge.textContent = isGenre ? "ジャンル対決" : "お店対決";
+    el.tournamentInstruction.textContent = isGenre
+      ? "強いて言うならどっちの気分？"
+      : "強いて言うならどっちに行きたい？";
+    el.tournamentCounter.textContent = `第 ${matchNum} / ${totalMatches} 戦`;
+
+    const challenger = challengers[challengerIndex];
+
+    const renderCardContent = (item) => {
+      if (isGenre) {
+        return `<div class="tournament-card-title">${escapeHtml(item)}</div>`;
+      } else {
+        const r = item;
+        const meta = formatCompactMeta(r);
+        const tagsStr = (r.tags || []).slice(0, 3).join(" · ");
+        return `
+          <div class="tournament-card-title">${escapeHtml(r.name)}</div>
+          ${tagsStr ? `<div class="tournament-card-meta">${escapeHtml(tagsStr)}</div>` : ""}
+          ${meta.text ? `<div class="tournament-card-meta">${escapeHtml(meta.text)}</div>` : ""}
+        `;
+      }
+    };
+
+    el.tournamentContentA.innerHTML = renderCardContent(champion);
+    el.tournamentContentB.innerHTML = renderCardContent(challenger);
+
+    lucide.createIcons();
+  }
+
+  function handleTournamentChoice(chosen) {
+    if (!tournamentState) return;
+
+    const challenger = tournamentState.challengers[tournamentState.challengerIndex];
+    if (chosen === "B") {
+      tournamentState.champion = challenger;
+    }
+
+    tournamentState.challengerIndex++;
+    tournamentState.matchNum++;
+
+    // More challengers in current phase?
+    if (tournamentState.challengerIndex < tournamentState.challengers.length) {
+      renderTournamentMatch();
+      return;
+    }
+
+    // End of phase!
+    if (tournamentState.phase === "genre") {
+      const winningGenre = tournamentState.champion;
+      let matchingRestaurants = tournamentState.filteredPool.filter((r) =>
+        (r.tags || []).includes(winningGenre)
+      );
+      if (matchingRestaurants.length === 0) {
+        matchingRestaurants = tournamentState.filteredPool;
+      }
+
+      if (matchingRestaurants.length === 1) {
+        showTournamentWinner(matchingRestaurants[0]);
+        return;
+      }
+
+      const shuffledRestaurants = uniformShuffle(matchingRestaurants, Math.random());
+      tournamentState.phase = "restaurant";
+      tournamentState.champion = shuffledRestaurants[0];
+      tournamentState.challengers = shuffledRestaurants.slice(1);
+      tournamentState.challengerIndex = 0;
+      tournamentState.totalMatches = shuffledRestaurants.length - 1;
+      tournamentState.matchNum = 1;
+
+      renderTournamentMatch();
+      return;
+    }
+
+    // Winner of restaurant tournament!
+    showTournamentWinner(tournamentState.champion);
+  }
+
+  function showTournamentWinner(restaurant) {
+    el.modalTournament.style.display = "flex";
+    el.tournamentActiveView.style.display = "none";
+    el.tournamentWinnerView.style.display = "flex";
+
+    el.tournamentWinnerName.textContent = restaurant.name;
+    const meta = formatCompactMeta(restaurant);
+    el.tournamentWinnerMeta.textContent = meta.text;
+
+    el.tournamentWinnerTags.innerHTML = (restaurant.tags || [])
+      .map((t) => `<span class="chip">${escapeHtml(t)}</span>`)
+      .join("");
+
+    if (typeof confetti === "function") {
+      try {
+        confetti({ particleCount: 50, spread: 70, origin: { y: 0.6 } });
+      } catch {}
+    }
+
+    el.btnTournamentAccept.onclick = () => {
+      recordVisit(restaurant.id);
+      closeModal(el.modalTournament);
+    };
+    el.btnTournamentRetry.onclick = () => {
+      startTournament();
+    };
     lucide.createIcons();
   }
 
@@ -1762,8 +2221,10 @@
       }
     });
 
-    // Pick One Decider
+    // Pick One Deciders (Random, Elimination, Tournament)
     el.btnPickOne.addEventListener("click", startRoulette);
+    if (el.btnPickElimination) el.btnPickElimination.addEventListener("click", startElimination);
+    if (el.btnPickTournament) el.btnPickTournament.addEventListener("click", startTournament);
 
     // Roulette Accept & Retry
     el.btnRouletteAccept.addEventListener("click", () => {
@@ -1772,8 +2233,29 @@
         closeModal(el.modalRoulette);
       }
     });
-
     el.btnRouletteRetry.addEventListener("click", startRoulette);
+
+    // Elimination Decider Events
+    if (el.eliminationCardsGrid) {
+      el.eliminationCardsGrid.addEventListener("click", (e) => {
+        const card = e.target.closest("[data-elim-idx]");
+        if (card) {
+          const idx = parseInt(card.getAttribute("data-elim-idx"), 10);
+          handleEliminationCardClick(idx);
+        }
+      });
+    }
+    if (el.btnEliminationNext) {
+      el.btnEliminationNext.addEventListener("click", handleEliminationNext);
+    }
+
+    // Tournament Decider Events
+    if (el.tournamentCardA) {
+      el.tournamentCardA.addEventListener("click", () => handleTournamentChoice("A"));
+    }
+    if (el.tournamentCardB) {
+      el.tournamentCardB.addEventListener("click", () => handleTournamentChoice("B"));
+    }
 
     // Reload / Sync button
     el.btnReload.addEventListener("click", async () => {

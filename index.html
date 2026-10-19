@@ -43,11 +43,19 @@
 
       <!-- Main Content -->
       <main class="main-container">
-        <!-- Quick Decide Action -->
+        <!-- Quick Decide Actions (Random / Elimination / Tournament) -->
         <div class="hero-action-bar">
-          <button id="btn-pick-one" class="btn-decide" title="いまの条件から1軒選ぶ">
+          <button id="btn-pick-one" class="btn-decide-item" title="ランダムに1軒選ぶ">
             <i data-lucide="dices"></i>
-            <span>1個だけ決める！</span>
+            <span>ランダム</span>
+          </button>
+          <button id="btn-pick-elimination" class="btn-decide-item" title="消去法で絞り込んで決める">
+            <i data-lucide="filter-x"></i>
+            <span>消去法</span>
+          </button>
+          <button id="btn-pick-tournament" class="btn-decide-item" title="2択の勝ち抜きで決める">
+            <i data-lucide="trophy"></i>
+            <span>勝ち抜き</span>
           </button>
         </div>
 
@@ -285,6 +293,114 @@
                 <i data-lucide="rotate-cw"></i>
                 <span>もう1回選ぶ</span>
               </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Modal: Elimination Decider (消去法) -->
+      <div id="modal-elimination" class="modal-backdrop" style="display:none;" role="dialog" aria-modal="true">
+        <div class="modal-card modal-decider-card">
+          <header class="modal-header">
+            <div class="decider-header-title">
+              <span class="decider-badge" id="elimination-step-badge">消去法</span>
+              <h3 id="elimination-modal-title">消去法で決める</h3>
+            </div>
+            <button class="btn-icon-sub" data-close-modal aria-label="閉じる">
+              <i data-lucide="x"></i>
+            </button>
+          </header>
+          <div class="modal-body decider-body">
+            <!-- Active Elimination View -->
+            <div id="elimination-active-view" class="decider-step-content">
+              <div class="decider-instruction-bar">
+                <p class="decider-instruction" id="elimination-instruction">「今回は違うな」というものをタップして除外してください</p>
+                <span class="decider-counter-badge" id="elimination-counter">残り 0 個</span>
+              </div>
+              <div id="elimination-cards-grid" class="elimination-grid"></div>
+              <div class="decider-actions-row">
+                <button type="button" id="btn-elimination-next" class="btn btn-primary btn-full">
+                  <span>次へ進む</span>
+                  <i data-lucide="arrow-right"></i>
+                </button>
+              </div>
+            </div>
+
+            <!-- Elimination Winner View -->
+            <div id="elimination-winner-view" class="decider-winner-box" style="display:none;">
+              <span class="winner-label">👑 残ったのはここ！</span>
+              <div class="winner-card">
+                <h2 id="elimination-winner-name" class="winner-name"></h2>
+                <div id="elimination-winner-tags" class="winner-tags"></div>
+                <div id="elimination-winner-meta" class="winner-meta"></div>
+              </div>
+              <div class="decider-actions-column">
+                <button type="button" id="btn-elimination-accept" class="btn-decide btn-full">
+                  <i data-lucide="utensils"></i>
+                  <span>ここにする！（行った）</span>
+                </button>
+                <button type="button" id="btn-elimination-retry" class="btn btn-secondary btn-full">
+                  <i data-lucide="rotate-cw"></i>
+                  <span>もう一度やり直す</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Modal: Tournament Decider (勝ち抜き) -->
+      <div id="modal-tournament" class="modal-backdrop" style="display:none;" role="dialog" aria-modal="true">
+        <div class="modal-card modal-decider-card">
+          <header class="modal-header">
+            <div class="decider-header-title">
+              <span class="decider-badge tournament-badge" id="tournament-step-badge">勝ち抜き</span>
+              <h3 id="tournament-modal-title">勝ち抜きで決める</h3>
+            </div>
+            <button class="btn-icon-sub" data-close-modal aria-label="閉じる">
+              <i data-lucide="x"></i>
+            </button>
+          </header>
+          <div class="modal-body decider-body">
+            <!-- Active 1v1 Battle View -->
+            <div id="tournament-active-view" class="decider-step-content">
+              <div class="decider-instruction-bar">
+                <p class="decider-instruction" id="tournament-instruction">強いて言うならどっち？</p>
+                <span class="decider-counter-badge" id="tournament-counter">第 1 回戦</span>
+              </div>
+              <div class="tournament-battle-container">
+                <div id="tournament-card-a" class="tournament-card" role="button" tabindex="0">
+                  <span class="card-side-tag">👑 暫定チャンプ</span>
+                  <div class="card-content" id="tournament-content-a"></div>
+                  <div class="card-tap-indicator">タップで選ぶ</div>
+                </div>
+                <div class="tournament-vs-badge">VS</div>
+                <div id="tournament-card-b" class="tournament-card" role="button" tabindex="0">
+                  <span class="card-side-tag challenger">⚡️ 挑戦者</span>
+                  <div class="card-content" id="tournament-content-b"></div>
+                  <div class="card-tap-indicator">タップで選ぶ</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Tournament Winner View -->
+            <div id="tournament-winner-view" class="decider-winner-box" style="display:none;">
+              <span class="winner-label">🏆 勝ち抜きチャンピオン！</span>
+              <div class="winner-card">
+                <h2 id="tournament-winner-name" class="winner-name"></h2>
+                <div id="tournament-winner-tags" class="winner-tags"></div>
+                <div id="tournament-winner-meta" class="winner-meta"></div>
+              </div>
+              <div class="decider-actions-column">
+                <button type="button" id="btn-tournament-accept" class="btn-decide btn-full">
+                  <i data-lucide="utensils"></i>
+                  <span>ここにする！（行った）</span>
+                </button>
+                <button type="button" id="btn-tournament-retry" class="btn btn-secondary btn-full">
+                  <i data-lucide="rotate-cw"></i>
+                  <span>もう一度対決する</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>
