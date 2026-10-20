@@ -97,6 +97,7 @@
     emptyTitle: document.getElementById("empty-title"),
     btnEmptyClear: document.getElementById("btn-empty-clear"),
     btnEmptyAdd: document.getElementById("btn-empty-add"),
+    btnEmptyAiImport: document.getElementById("btn-empty-ai-import"),
     emptyDesc: document.getElementById("empty-desc"),
     btnEmptyConnect: document.getElementById("btn-empty-connect"),
     // Restaurant Modal
@@ -157,6 +158,7 @@
     btnTournamentRetry: document.getElementById("btn-tournament-retry"),
     // Settings Modal
     modalSettings: document.getElementById("modal-settings"),
+    btnOpenAiImport: document.getElementById("btn-open-ai-import"),
     btnOpenTagsManager: document.getElementById("btn-open-tags-manager"),
     dropboxStatusBox: document.getElementById("dropbox-status-box"),
     btnDropboxConnect: document.getElementById("btn-dropbox-connect"),
@@ -164,6 +166,15 @@
     btnDropboxSyncNow: document.getElementById("btn-dropbox-sync-now"),
     btnExportJson: document.getElementById("btn-export-json"),
     fileImportJson: document.getElementById("file-import-json"),
+    // AI Import Modal
+    modalAiImport: document.getElementById("modal-ai-import"),
+    inputAiBaseLocation: document.getElementById("input-ai-base-location"),
+    selectAiRadius: document.getElementById("select-ai-radius"),
+    inputAiPreferences: document.getElementById("input-ai-preferences"),
+    btnCopyAiPrompt: document.getElementById("btn-copy-ai-prompt"),
+    textareaAiPromptPreview: document.getElementById("textarea-ai-prompt-preview"),
+    textareaAiResult: document.getElementById("textarea-ai-result"),
+    btnSubmitAiImport: document.getElementById("btn-submit-ai-import"),
     // Tag Manager Modal
     modalTagsManager: document.getElementById("modal-tags-manager"),
     btnPurgeUnusedTags: document.getElementById("btn-purge-unused-tags"),
@@ -244,7 +255,7 @@
     return null;
   }
 
-  function addTagToGroup(groupId, newTag) {
+  function registerTagInGroup(groupId, newTag) {
     const tag = (newTag || "").trim();
     if (!tag) return;
 
@@ -266,9 +277,15 @@
     if (!group.tags.includes(tag)) {
       group.tags.push(tag);
     }
+  }
 
-    state.formTags.add(tag);
-    renderFormPresetChips();
+  function addTagToGroup(groupId, newTag) {
+    registerTagInGroup(groupId, newTag);
+    const tag = (newTag || "").trim();
+    if (tag) {
+      state.formTags.add(tag);
+      renderFormPresetChips();
+    }
   }
 
   /* ==========================================================================
@@ -1033,6 +1050,7 @@
         }
         el.btnEmptyClear.style.display = "none";
         el.btnEmptyAdd.style.display = "none";
+        if (el.btnEmptyAiImport) el.btnEmptyAiImport.style.display = "none";
         if (el.btnEmptyConnect) el.btnEmptyConnect.style.display = "inline-flex";
       } else {
         if (el.emptyDesc) el.emptyDesc.style.display = "none";
@@ -1041,10 +1059,12 @@
         if (total === 0) {
           el.emptyTitle.textContent = "まだお店がありません";
           el.btnEmptyAdd.style.display = "inline-flex";
+          if (el.btnEmptyAiImport) el.btnEmptyAiImport.style.display = "inline-flex";
           el.btnEmptyClear.style.display = "none";
         } else {
           el.emptyTitle.textContent = "一致するお店がありません";
           el.btnEmptyAdd.style.display = "none";
+          if (el.btnEmptyAiImport) el.btnEmptyAiImport.style.display = "none";
           el.btnEmptyClear.style.display = "inline-flex";
         }
       }
@@ -1831,6 +1851,292 @@
       }
     };
     reader.readAsText(file);
+  }
+
+  /* ==========================================================================
+     AI Restaurant Generator / Importer
+     ========================================================================== */
+  function generateAiPrompt(baseLoc, radiusMinutes, preferences) {
+    const prefSection = preferences
+      ? `\n【希望・こだわり条件】\n${preferences}\n`
+      : "";
+
+    return `以下の【基準地点】から【徒歩範囲】にある、ランチ営業を行っている実在の飲食店をできるだけ多く（30〜50店舗以上を目標に）リストアップして、指定のJSON形式で出力してください。
+
+【基準地点】
+${baseLoc}
+
+【徒歩範囲】
+徒歩${radiusMinutes}分以内${prefSection}
+【出力形式の絶対ルール】
+1. チャット上のメッセージとして直接コピー＆ペーストできるよう、全体を単一の \`\`\`json ... \`\`\` コードブロックのみで出力してください。
+2. 会話文、挨拶、前置き、末尾のまとめ、注釈などは一切出力しないでください（コードブロックのみを出力してください）。
+3. ファイルのダウンロードリンクや、Canvas / Artifacts などの独立UI機能は使わず、チャット本文中に直接テキストとしてコードブロックを出力してください。
+4. 架空の店舗は含めず、実際にランチ営業をしている実在の店舗のみを挙げてください。
+5. 各店舗の情報は以下のJSON配列形式にしてください。
+
+\`\`\`json
+[
+  {
+    "name": "店舗名（正確な店名）",
+    "genre": "代表的なジャンル（例: ラーメン, カレー, 和食, 定食, 中華, イタリアン, カフェ, そば, 焼肉, うどん 等から1つ）",
+    "time_walk": 5,
+    "area": "方角やエリア名（例: 東口, 西口, 南口, 宮益坂, 道玄坂, 駅直結 等から簡潔に）"
+  }
+]
+\`\`\`
+
+【各項目の詳細ルール】
+・name: 実在する飲食店の正確な名称（支店名がある場合は「〇〇 渋谷店」のように明記）
+・genre: 料理のジャンル（1店舗につき1つの簡潔な単語）
+・time_walk: 基準地点からの推定徒歩分数（「分」などの単位は含めず、半角数値の整数のみ。例: 3, 5, 8, 10）
+・area: 基準地点から見た方角や通りの名前など、大まかな位置がわかる短い単語（例: 東口、西口、〇〇通り）`;
+  }
+
+  function updateAiPromptPreview() {
+    if (!el.textareaAiPromptPreview) return;
+    const baseLoc = (el.inputAiBaseLocation?.value || "").trim() || "（基準地点を入力）";
+    const radius = el.selectAiRadius?.value || "10";
+    const preferences = (el.inputAiPreferences?.value || "").trim();
+    el.textareaAiPromptPreview.value = generateAiPrompt(baseLoc, radius, preferences);
+  }
+
+  async function copyAiPrompt() {
+    const baseLoc = (el.inputAiBaseLocation?.value || "").trim();
+    if (!baseLoc) {
+      showToast("基準となる場所を入力してください");
+      el.inputAiBaseLocation?.focus();
+      return;
+    }
+    const radius = el.selectAiRadius?.value || "10";
+    const preferences = (el.inputAiPreferences?.value || "").trim();
+    const promptText = generateAiPrompt(baseLoc, radius, preferences);
+
+    localStorage.setItem("lunchdeck.ai_base_location", baseLoc);
+
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(promptText);
+      } else {
+        const ta = document.createElement("textarea");
+        ta.value = promptText;
+        ta.style.position = "fixed";
+        ta.style.opacity = "0";
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+      }
+      showToast("プロンプトをコピーしました！AIに貼り付けてください");
+
+      if (el.btnCopyAiPrompt) {
+        const origHtml = el.btnCopyAiPrompt.innerHTML;
+        el.btnCopyAiPrompt.innerHTML = '<i data-lucide="check"></i> <span>コピー完了！</span>';
+        if (window.lucide && typeof window.lucide.createIcons === "function") {
+          window.lucide.createIcons();
+        }
+        setTimeout(() => {
+          el.btnCopyAiPrompt.innerHTML = origHtml;
+          if (window.lucide && typeof window.lucide.createIcons === "function") {
+            window.lucide.createIcons();
+          }
+        }, 2500);
+      }
+    } catch (err) {
+      console.error("Clipboard copy failed", err);
+      showToast("クリップボードへのコピーに失敗しました");
+    }
+  }
+
+  function openAiImportModal() {
+    if (!getAuth()) {
+      showToast("先に Dropbox と連携してください");
+      connectDropbox();
+      return;
+    }
+    const savedBaseLoc = localStorage.getItem("lunchdeck.ai_base_location") || "";
+    if (savedBaseLoc && el.inputAiBaseLocation && !el.inputAiBaseLocation.value) {
+      el.inputAiBaseLocation.value = savedBaseLoc;
+    }
+    updateAiPromptPreview();
+    el.modalAiImport.style.display = "flex";
+    if (window.lucide && typeof window.lucide.createIcons === "function") {
+      window.lucide.createIcons();
+    }
+  }
+
+  function handleAiImport() {
+    const rawText = (el.textareaAiResult?.value || "").trim();
+    if (!rawText) {
+      showToast("AIの返答テキストを貼り付けてください");
+      el.textareaAiResult?.focus();
+      return;
+    }
+
+    // 1. Sanitize & extract JSON content
+    let textToParse = rawText;
+
+    // Check markdown code blocks: ```json ... ``` or ``` ... ```
+    const codeBlockMatch = textToParse.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+    if (codeBlockMatch && codeBlockMatch[1]) {
+      textToParse = codeBlockMatch[1].trim();
+    }
+
+    // Find array [ ... ] or object { ... }
+    const firstBracket = textToParse.indexOf("[");
+    const lastBracket = textToParse.lastIndexOf("]");
+
+    let items = null;
+
+    if (firstBracket !== -1 && lastBracket !== -1 && lastBracket > firstBracket) {
+      let arrayJson = textToParse.substring(firstBracket, lastBracket + 1);
+      // Clean trailing commas before closing brackets or braces
+      arrayJson = arrayJson.replace(/,\s*([}\]])/g, "$1");
+      try {
+        const parsed = JSON.parse(arrayJson);
+        if (Array.isArray(parsed)) {
+          items = parsed;
+        }
+      } catch (err) {
+        console.warn("Array parse failed, fallback to full parse", err);
+      }
+    }
+
+    if (!items) {
+      try {
+        let sanitized = textToParse.replace(/,\s*([}\]])/g, "$1");
+        const parsed = JSON.parse(sanitized);
+        if (Array.isArray(parsed)) {
+          items = parsed;
+        } else if (parsed && typeof parsed === "object") {
+          const potentialArray = parsed.restaurants || parsed.stores || parsed.shops || parsed.data || parsed.items;
+          if (Array.isArray(potentialArray)) {
+            items = potentialArray;
+          }
+        }
+      } catch (err) {
+        console.error("JSON parse error", err);
+      }
+    }
+
+    if (!items || !Array.isArray(items) || items.length === 0) {
+      showToast("JSONの解析に失敗しました。AIの出力形式を確認してください");
+      return;
+    }
+
+    // 2. Validate items
+    const validItems = items.filter(
+      (item) => item && typeof item === "object" && typeof item.name === "string" && item.name.trim().length > 0
+    );
+
+    if (validItems.length === 0) {
+      showToast("店舗データが見つかりませんでした。店名(name)が含まれているか確認してください");
+      return;
+    }
+
+    // 3. Process items and deduplicate
+    const existingNames = new Set(
+      (state.data.restaurants || []).map((r) => r.name.trim().toLowerCase())
+    );
+    const newRestaurants = [];
+    let skippedCount = 0;
+
+    for (const item of validItems) {
+      const name = item.name.trim();
+      if (!name) continue;
+      if (existingNames.has(name.toLowerCase())) {
+        skippedCount++;
+        continue;
+      }
+      existingNames.add(name.toLowerCase());
+
+      // Walking time tag normalization: round to 5-minute multiples (e.g. 1~5 -> 徒歩5分, 6~10 -> 徒歩10分)
+      let rawMinutes = null;
+      const rawVal = item.time_walk ?? item.time ?? item.walk_time ?? item.walk;
+      if (typeof rawVal === "number") {
+        rawMinutes = rawVal;
+      } else if (typeof rawVal === "string") {
+        const match = rawVal.match(/\d+/);
+        if (match) rawMinutes = parseInt(match[0], 10);
+      }
+      if (!rawMinutes || isNaN(rawMinutes) || rawMinutes <= 0) {
+        rawMinutes = 5;
+      }
+      const roundedMinutes = Math.max(5, Math.ceil(rawMinutes / 5) * 5);
+      const timeTag = `徒歩${roundedMinutes}分`;
+
+      // Genre tag
+      const rawGenre = item.genre || item.category || "";
+      const genreTag = typeof rawGenre === "string" ? rawGenre.trim() : "";
+
+      // Area tag
+      const rawArea = item.area || item.location || "";
+      const areaTag = typeof rawArea === "string" ? rawArea.trim() : "";
+
+      // Register tags into tag groups
+      const tags = [];
+      if (genreTag) {
+        registerTagInGroup("genre", genreTag);
+        tags.push(genreTag);
+      }
+      registerTagInGroup("time", timeTag);
+      tags.push(timeTag);
+      if (areaTag) {
+        registerTagInGroup("area", areaTag);
+        tags.push(areaTag);
+      }
+
+      newRestaurants.push({
+        id: uuid(),
+        name,
+        tags,
+        visits: [],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+    }
+
+    if (newRestaurants.length === 0) {
+      if (skippedCount > 0) {
+        showToast(`すべて登録済みのお店でした（${skippedCount}件スキップ）`);
+      } else {
+        showToast("取り込めるお店がありませんでした");
+      }
+      return;
+    }
+
+    // Sort time tags numerically for clean presentation
+    const timeGroup = state.data.tagGroups?.find((g) => g.id === "time");
+    if (timeGroup && Array.isArray(timeGroup.tags)) {
+      timeGroup.tags.sort((a, b) => {
+        const numA = parseInt(a.replace(/\D/g, ""), 10) || 0;
+        const numB = parseInt(b.replace(/\D/g, ""), 10) || 0;
+        return numA - numB;
+      });
+    }
+
+    const baseLoc = (el.inputAiBaseLocation?.value || "").trim();
+    if (baseLoc) {
+      localStorage.setItem("lunchdeck.ai_base_location", baseLoc);
+    }
+
+    if (!state.data.restaurants) state.data.restaurants = [];
+    state.data.restaurants.unshift(...newRestaurants);
+
+    pruneUnusedTags();
+    closeModal(el.modalAiImport);
+    if (el.textareaAiResult) el.textareaAiResult.value = "";
+    scheduleSave();
+    render();
+
+    const skipMsg = skippedCount > 0 ? ` (${skippedCount}件は既存のためスキップ)` : "";
+    showToast(`${newRestaurants.length}件のお店を一括登録しました！${skipMsg}`);
+
+    if (typeof confetti === "function") {
+      try {
+        confetti({ particleCount: 70, spread: 80, origin: { y: 0.6 } });
+      } catch (_) {}
+    }
   }
 
   /* ==========================================================================
@@ -2632,6 +2938,32 @@
       if (file) importJson(file);
       e.target.value = "";
     });
+
+    // AI Import Assistant
+    if (el.btnEmptyAiImport) {
+      el.btnEmptyAiImport.addEventListener("click", openAiImportModal);
+    }
+    if (el.btnOpenAiImport) {
+      el.btnOpenAiImport.addEventListener("click", () => {
+        closeModal(el.modalSettings);
+        openAiImportModal();
+      });
+    }
+    if (el.btnCopyAiPrompt) {
+      el.btnCopyAiPrompt.addEventListener("click", copyAiPrompt);
+    }
+    if (el.btnSubmitAiImport) {
+      el.btnSubmitAiImport.addEventListener("click", handleAiImport);
+    }
+    if (el.inputAiBaseLocation) {
+      el.inputAiBaseLocation.addEventListener("input", updateAiPromptPreview);
+    }
+    if (el.selectAiRadius) {
+      el.selectAiRadius.addEventListener("change", updateAiPromptPreview);
+    }
+    if (el.inputAiPreferences) {
+      el.inputAiPreferences.addEventListener("input", updateAiPromptPreview);
+    }
   }
 
   /* ==========================================================================

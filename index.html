@@ -165,6 +165,9 @@
             <div class="empty-actions">
               <button id="btn-empty-clear" class="btn btn-sm btn-secondary">絞り込みを解除</button>
               <button id="btn-empty-add" class="btn btn-sm btn-primary">お店を追加</button>
+              <button id="btn-empty-ai-import" class="btn btn-sm btn-primary-highlight" style="display:none;">
+                <i data-lucide="sparkles"></i> AIデータ収集でお店を登録
+              </button>
               <button id="btn-empty-connect" class="btn btn-sm btn-primary" style="display:none;">
                 <i data-lucide="log-in"></i> Dropbox と連携する
               </button>
@@ -459,6 +462,22 @@
             </div>
 
 
+            <!-- AI Data Collection -->
+            <div class="settings-section">
+              <h4>
+                <i data-lucide="sparkles"></i>
+                <span>AIデータ収集でお店を登録</span>
+              </h4>
+              <p class="settings-desc">
+                お使いのチャットAI(ChatGPT等)を使って、あなたの近所のお店のリストを作成できます。
+              </p>
+              <div class="settings-btn-row">
+                <button type="button" id="btn-open-ai-import" class="btn btn-secondary btn-full">
+                  <i data-lucide="sparkles"></i> AIデータ収集ガイドを開く
+                </button>
+              </div>
+            </div>
+
             <!-- Tag Management -->
             <div class="settings-section">
               <h4>
@@ -512,6 +531,111 @@
               <input type="text" id="input-manager-add-tag" placeholder="新しいタグ名を入力してEnter..." autocomplete="off" />
               <button type="button" id="btn-manager-add-tag" class="btn-primary-sm">追加</button>
             </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-close-modal>閉じる</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Modal: AI Restaurant Generator & Importer -->
+      <div id="modal-ai-import" class="modal-backdrop" style="display:none;" role="dialog" aria-modal="true">
+        <div class="modal-card modal-ai-card">
+          <header class="modal-header">
+            <div class="ai-header-title">
+              <i data-lucide="sparkles" class="ai-sparkle-icon"></i>
+              <h3>AIデータ収集ガイド</h3>
+            </div>
+            <button class="btn-icon-sub" data-close-modal aria-label="閉じる">
+              <i data-lucide="x"></i>
+            </button>
+          </header>
+          <div class="modal-body ai-import-body">
+            <p class="ai-import-lead">
+              お使いのチャットAI（ChatGPT、Claude、Gemini等）を使って、近所のおすすめランチ店をリストアップして取り込めます。
+            </p>
+
+            <!-- Step 1: Prompt Generator -->
+            <section class="ai-step-section">
+              <div class="ai-step-header">
+                <span class="ai-step-num">Step 1</span>
+                <h4>条件を入力してプロンプトを作成</h4>
+              </div>
+              <div class="form-group">
+                <label for="input-ai-base-location">基準となる場所 <span class="required-badge">必須</span></label>
+                <input
+                  type="text"
+                  id="input-ai-base-location"
+                  placeholder="例: 渋谷ヒカリエ、東京駅八重洲北口、〇〇オフィス"
+                  autocomplete="off"
+                />
+              </div>
+              <div class="form-row-2col">
+                <div class="form-group">
+                  <label for="select-ai-radius">徒歩範囲</label>
+                  <select id="select-ai-radius" class="ai-select">
+                    <option value="5">徒歩5分以内</option>
+                    <option value="10" selected>徒歩10分以内</option>
+                    <option value="15">徒歩15分以内</option>
+                    <option value="20">徒歩20分以内</option>
+                    <option value="30">徒歩30分以内</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label for="input-ai-preferences">好み・こだわり（任意）</label>
+                  <input
+                    type="text"
+                    id="input-ai-preferences"
+                    placeholder="例: 和食多め、チェーン少なめ"
+                    autocomplete="off"
+                  />
+                </div>
+              </div>
+
+              <button type="button" id="btn-copy-ai-prompt" class="btn btn-primary btn-full ai-copy-btn">
+                <i data-lucide="copy"></i>
+                <span>プロンプトをコピーする</span>
+              </button>
+
+              <details class="ai-prompt-details">
+                <summary>生成プロンプトを確認する</summary>
+                <textarea id="textarea-ai-prompt-preview" class="ai-prompt-preview-textarea" readonly rows="7"></textarea>
+              </details>
+            </section>
+
+            <!-- Step 2: Run in AI -->
+            <section class="ai-step-section">
+              <div class="ai-step-header">
+                <span class="ai-step-num">Step 2</span>
+                <h4>AIに送信してリストを出力してもらう</h4>
+              </div>
+              <p class="ai-step-desc">
+                ChatGPTやClaudeなどのチャットを開き、コピーしたプロンプトをそのまま送信してください。<br>
+                <small class="text-sub">※ AIがチャット上にJSON形式のお店一覧を出力します（ファイルではなくテキストで出力されます）。</small>
+              </p>
+            </section>
+
+            <!-- Step 3: Paste and Import -->
+            <section class="ai-step-section">
+              <div class="ai-step-header">
+                <span class="ai-step-num">Step 3</span>
+                <h4>AIの返答を貼り付けて取り込み</h4>
+              </div>
+              <div class="form-group">
+                <label for="textarea-ai-result">AIの返答テキスト</label>
+                <textarea
+                  id="textarea-ai-result"
+                  class="ai-result-textarea"
+                  placeholder="AIが出力したテキスト（```json ... ``` や [ ... ] 全体）をそのままここに貼り付けてください"
+                  rows="6"
+                ></textarea>
+              </div>
+
+              <button type="button" id="btn-submit-ai-import" class="btn btn-primary-highlight btn-full ai-import-submit-btn">
+                <i data-lucide="sparkles"></i>
+                <span>登録する</span>
+              </button>
+            </section>
           </div>
           <div class="modal-footer">
             <button type="button" class="btn btn-secondary" data-close-modal>閉じる</button>

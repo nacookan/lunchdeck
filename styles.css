@@ -1730,3 +1730,196 @@ body {
   gap: 0.5rem;
   margin-top: 0.4rem;
 }
+
+/* ==========================================================================
+   AI Restaurant Generator / Importer Modal
+   ========================================================================== */
+.modal-ai-card {
+  max-width: 520px;
+}
+
+.ai-header-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.ai-header-title h3 {
+  margin: 0;
+}
+
+.ai-sparkle-icon {
+  width: 1.25rem;
+  height: 1.25rem;
+  color: #f59e0b;
+}
+
+.ai-import-body {
+  gap: 1rem;
+}
+
+.ai-import-lead {
+  font-size: 0.85rem;
+  color: var(--text-sub);
+  line-height: 1.5;
+  margin: 0;
+}
+
+.ai-step-section {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 0.9rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.ai-step-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.ai-step-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--primary);
+  color: #ffffff;
+  font-size: 0.72rem;
+  font-weight: 800;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  letter-spacing: 0.02em;
+}
+
+.ai-step-header h4 {
+  font-size: 0.92rem;
+  font-weight: 800;
+  color: var(--text-main);
+  margin: 0;
+}
+
+.required-badge {
+  font-size: 0.7rem;
+  font-weight: 800;
+  color: #ef4444;
+  margin-left: 0.25rem;
+}
+
+.form-row-2col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.6rem;
+}
+
+.ai-select {
+  width: 100%;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 0.88rem;
+  background-color: #ffffff;
+  color: var(--text-main);
+  outline: none;
+  cursor: pointer;
+}
+
+.ai-select:focus {
+  border-color: var(--primary);
+}
+
+.ai-copy-btn {
+  margin-top: 0.2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+}
+
+.ai-prompt-details {
+  font-size: 0.78rem;
+  color: var(--text-sub);
+  margin-top: 0.2rem;
+}
+
+.ai-prompt-details summary {
+  cursor: pointer;
+  font-weight: 700;
+  user-select: none;
+  padding: 0.2rem 0;
+}
+
+.ai-prompt-details summary:hover {
+  color: var(--text-main);
+}
+
+.ai-prompt-preview-textarea {
+  width: 100%;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.72rem;
+  line-height: 1.4;
+  color: var(--text-sub);
+  background: var(--bg-app);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.55rem;
+  margin-top: 0.4rem;
+  resize: vertical;
+}
+
+.ai-step-desc {
+  font-size: 0.84rem;
+  color: var(--text-main);
+  line-height: 1.5;
+  margin: 0;
+}
+
+.ai-result-textarea {
+  width: 100%;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.6rem;
+  background: #ffffff;
+  color: var(--text-main);
+  outline: none;
+  resize: vertical;
+}
+
+.ai-result-textarea:focus {
+  border-color: var(--primary);
+}
+
+.btn-primary-highlight {
+  background: linear-gradient(135deg, #f97316 0%, #ea580c 100%);
+  color: #ffffff;
+  font-weight: 800;
+  border: none;
+  box-shadow: 0 2px 4px rgba(249, 115, 22, 0.25);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.btn-primary-highlight:hover {
+  background: linear-gradient(135deg, #ea580c 0%, #c2410c 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 6px rgba(249, 115, 22, 0.35);
+}
+
+.btn-primary-highlight:active {
+  transform: translateY(0);
+}
+
+@media (max-width: 480px) {
+  .form-row-2col {
+    grid-template-columns: 1fr;
+  }
+}
